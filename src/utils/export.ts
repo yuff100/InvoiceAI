@@ -1,11 +1,34 @@
 import * as XLSX from 'xlsx';
 import type { ProcessingRecord, InvoiceFields, InvoiceItem } from '../types/invoice';
 
-function formatItems(items?: InvoiceItem[]): string {
-  if (!items || items.length === 0) return '';
-  return items.map((item, idx) => 
-    `${idx + 1}. ${item.name} (金额:${item.amount}${item.taxAmount ? ',税额:' + item.taxAmount : ''})`
-  ).join('; ');
+const MAX_ITEMS = 5;
+
+function generateItemColumns(items?: InvoiceItem[]): Record<string, string | number> {
+  const columns: Record<string, string | number> = {};
+  
+  if (!items || items.length === 0) {
+    for (let i = 1; i <= MAX_ITEMS; i++) {
+      columns[`项目名称${i}`] = '';
+      columns[`金额${i}`] = '';
+      columns[`税额${i}`] = '';
+    }
+    return columns;
+  }
+  
+  items.slice(0, MAX_ITEMS).forEach((item, idx) => {
+    const i = idx + 1;
+    columns[`项目名称${i}`] = item.name || '';
+    columns[`金额${i}`] = item.amount || '';
+    columns[`税额${i}`] = item.taxAmount || '';
+  });
+  
+  for (let i = items.length + 1; i <= MAX_ITEMS; i++) {
+    columns[`项目名称${i}`] = '';
+    columns[`金额${i}`] = '';
+    columns[`税额${i}`] = '';
+  }
+  
+  return columns;
 }
 
 export function exportToExcel(records: ProcessingRecord[]): void {
@@ -15,6 +38,8 @@ export function exportToExcel(records: ProcessingRecord[]): void {
 
   const data = records.map((record, index) => {
     const ocr = record.ocrResult;
+    const itemColumns = generateItemColumns(ocr?.items);
+    
     return {
       '序号': index + 1,
       '文件名': record.fileName,
@@ -30,7 +55,7 @@ export function exportToExcel(records: ProcessingRecord[]): void {
       '税额': ocr?.taxAmount || '',
       '校验码': ocr?.checkCode || '',
       '识别置信度': ocr?.confidence ? `${(ocr.confidence * 100).toFixed(2)}%` : '',
-      '项目明细': formatItems(ocr?.items),
+      ...itemColumns,
       '处理时间': record.uploadTime,
       '错误信息': record.error || '',
     };
@@ -42,25 +67,23 @@ export function exportToExcel(records: ProcessingRecord[]): void {
   // 创建工作表
   const ws = XLSX.utils.json_to_sheet(data);
   
-  const colWidths: Record<string, number> = {
-    'A': 8,
-    'B': 25,
-    'C': 12,
-    'D': 15,
-    'E': 22,
-    'F': 12,
-    'G': 30,
-    'H': 20,
-    'I': 30,
-    'J': 20,
-    'K': 12,
-    'L': 12,
-    'M': 20,
-    'N': 12,
-    'O': 50,
-    'P': 20,
-    'Q': 30,
+  const colWidths: Record<string, number> = {};
+  const baseCols = {
+    'A': 8, 'B': 25, 'C': 12, 'D': 15, 'E': 22, 'F': 12,
+    'G': 30, 'H': 20, 'I': 30, 'J': 20, 'K': 12, 'L': 12, 'M': 20, 'N': 12
   };
+  Object.assign(colWidths, baseCols);
+  
+  const startIdx = 14;
+  for (let i = 0; i < MAX_ITEMS * 3; i++) {
+    const col = String.fromCharCode(65 + startIdx + i);
+    colWidths[col] = (i % 3 === 0) ? 30 : 12;
+  }
+  
+  const timeCol = String.fromCharCode(65 + startIdx + MAX_ITEMS * 3);
+  const errorCol = String.fromCharCode(65 + startIdx + MAX_ITEMS * 3 + 1);
+  colWidths[timeCol] = 20;
+  colWidths[errorCol] = 30;
   
   ws['!cols'] = Object.keys(colWidths).map(key => ({ wch: colWidths[key] }));
   
@@ -119,13 +142,19 @@ export function exportToCSV(records: ProcessingRecord[]): void {
     '税额',
     '校验码',
     '识别置信度',
-    '项目明细',
+    ...Array.from({ length: MAX_ITEMS }, (_, i) => [`项目名称${i + 1}`, `金额${i + 1}`, `税额${i + 1}`]).flat(),
     '处理时间',
     '错误信息',
   ];
 
   const rows = records.map((record, index) => {
     const ocr = record.ocrResult;
+    const itemColumns = generateItemColumns(ocr?.items);
+    const itemValues = [];
+    for (let i = 1; i <= MAX_ITEMS; i++) {
+      itemValues.push(itemColumns[`项目名称${i}`], itemColumns[`金额${i}`], itemColumns[`税额${i}`]);
+    }
+    
     return [
       index + 1,
       record.fileName,
@@ -141,7 +170,7 @@ export function exportToCSV(records: ProcessingRecord[]): void {
       ocr?.taxAmount || '',
       ocr?.checkCode || '',
       ocr?.confidence ? `${(ocr.confidence * 100).toFixed(2)}%` : '',
-      formatItems(ocr?.items),
+      ...itemValues,
       record.uploadTime,
       record.error || '',
     ];
