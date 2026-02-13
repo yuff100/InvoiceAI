@@ -2,6 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+// Clear module cache on reload
+delete require.cache[require.resolve('./src/pages/api/tesseract.cjs')];
+
 const app = express();
 app.use(cors());
 // 增加JSON解析限制到200MB
