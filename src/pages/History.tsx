@@ -1,8 +1,11 @@
 import React from 'react'
-import { Card, List, Tag, Button, Typography, Empty } from 'antd'
-import { DeleteOutlined, EyeOutlined } from '@ant-design/icons'
+import { Card, List, Tag, Button, Typography, Empty, message, Space, Dropdown } from 'antd'
+import { DeleteOutlined, EyeOutlined, DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons'
+import type { MenuProps } from 'antd'
 import { useUploadStore } from '@/stores/uploadStore'
+import { exportToExcel, exportToCSV } from '@/utils/export'
 import dayjs from 'dayjs'
+import type { ProcessingRecord } from '@/types/invoice'
 
 const { Title, Text } = Typography
 
@@ -36,8 +39,35 @@ const HistoryPage: React.FC = () => {
   }
 
   const handleView = (record: any) => {
-    // TODO: 实现查看详情
     console.log('查看详情:', record)
+  }
+
+  const handleExportExcel = () => {
+    try {
+      const completedRecords = history.filter(r => r.status === 'completed')
+      if (completedRecords.length === 0) {
+        message.warning('没有已完成的数据可导出')
+        return
+      }
+      exportToExcel(completedRecords)
+      message.success(`已导出 ${completedRecords.length} 条记录`)
+    } catch (error) {
+      message.error('导出失败: ' + (error as Error).message)
+    }
+  }
+
+  const handleExportCSV = () => {
+    try {
+      const completedRecords = history.filter(r => r.status === 'completed')
+      if (completedRecords.length === 0) {
+        message.warning('没有已完成的数据可导出')
+        return
+      }
+      exportToCSV(completedRecords)
+      message.success(`已导出 ${completedRecords.length} 条记录`)
+    } catch (error) {
+      message.error('导出失败: ' + (error as Error).message)
+    }
   }
 
   return (
@@ -47,14 +77,32 @@ const HistoryPage: React.FC = () => {
           <Title level={2} className="mb-0">
             处理历史
           </Title>
-          {history.length > 0 && (
-            <Button
-              onClick={() => useUploadStore.getState().clearHistory()}
-              className="text-red-600 border-red-300 hover:bg-red-50"
-            >
-              清空历史
-            </Button>
-          )}
+          <Space>
+            {history.filter(r => r.status === 'completed').length > 0 && (
+              <>
+                <Button
+                  icon={<DownloadOutlined />}
+                  onClick={handleExportExcel}
+                >
+                  导出Excel
+                </Button>
+                <Button
+                  icon={<DownloadOutlined />}
+                  onClick={handleExportCSV}
+                >
+                  导出CSV
+                </Button>
+              </>
+            )}
+            {history.length > 0 && (
+              <Button
+                onClick={() => useUploadStore.getState().clearHistory()}
+                className="text-red-600 border-red-300 hover:bg-red-50"
+              >
+                清空历史
+              </Button>
+            )}
+          </Space>
         </div>
 
         {history.length === 0 ? (
@@ -89,6 +137,45 @@ const HistoryPage: React.FC = () => {
                     >
                       查看
                     </Button>,
+                    record.status === 'completed' && (
+                      <Dropdown
+                        key="export"
+                        menu={{
+                          items: [
+                            {
+                              key: 'excel',
+                              icon: <FileExcelOutlined />,
+                              label: '导出Excel',
+                              onClick: () => {
+                                try {
+                                  exportToExcel([record])
+                                  message.success('导出成功')
+                                } catch (error) {
+                                  message.error('导出失败: ' + (error as Error).message)
+                                }
+                              }
+                            },
+                            {
+                              key: 'csv',
+                              icon: <FileTextOutlined />,
+                              label: '导出CSV',
+                              onClick: () => {
+                                try {
+                                  exportToCSV([record])
+                                  message.success('导出成功')
+                                } catch (error) {
+                                  message.error('导出失败: ' + (error as Error).message)
+                                }
+                              }
+                            }
+                          ]
+                        }}
+                      >
+                        <Button type="text" icon={<DownloadOutlined />}>
+                          导出
+                        </Button>
+                      </Dropdown>
+                    ),
                     <Button
                       key="delete"
                       type="text"
@@ -98,7 +185,7 @@ const HistoryPage: React.FC = () => {
                     >
                       删除
                     </Button>
-                  ]}
+                  ].filter(Boolean)}
                 >
                   <div className="space-y-3">
                     <div className="flex justify-between items-start">
