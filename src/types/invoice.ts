@@ -19,6 +19,7 @@ export interface InvoiceFields {
   buyerTaxNumber?: string;   // 购方税号
   totalAmount?: string;      // 价税合计
   taxAmount?: string;        // 税额
+  totalSum?: string;         // 总额（不含税金额合计）
   checkCode?: string;        // 校验码
   confidence?: number;       // 置信度
   items?: InvoiceItem[];     // 项目明细

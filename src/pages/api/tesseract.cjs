@@ -402,6 +402,11 @@ function extractInvoiceFields(ocrText) {
   if (items.length > 0) {
     fields.items = items;
     console.log('✅ Found items:', items.length, 'items');
+    
+    // 计算总额（所有项目的金额总和）
+    const totalSum = items.reduce((sum, item) => sum + (item.amount || 0), 0);
+    fields.totalSum = totalSum.toFixed(2);
+    console.log('✅ Calculated totalSum:', fields.totalSum);
   }
   
   console.log('📋 Extracted invoice fields:', fields);

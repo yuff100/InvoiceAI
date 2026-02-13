@@ -53,6 +53,7 @@ export function exportToExcel(records: ProcessingRecord[]): void {
       '购方税号': ocr?.buyerTaxNumber || '',
       '价税合计': ocr?.totalAmount || '',
       '税额': ocr?.taxAmount || '',
+      '总额': ocr?.totalSum || '',
       '校验码': ocr?.checkCode || '',
       '识别置信度': ocr?.confidence ? `${(ocr.confidence * 100).toFixed(2)}%` : '',
       ...itemColumns,
@@ -70,16 +71,16 @@ export function exportToExcel(records: ProcessingRecord[]): void {
   const colWidths: Record<string, number> = {};
   const baseCols = {
     'A': 8, 'B': 25, 'C': 12, 'D': 15, 'E': 22, 'F': 12,
-    'G': 30, 'H': 20, 'I': 30, 'J': 20, 'K': 12, 'L': 12, 'M': 20, 'N': 12
+    'G': 30, 'H': 20, 'I': 30, 'J': 20, 'K': 12, 'L': 12, 'M': 12, 'N': 20, 'O': 12
   };
   Object.assign(colWidths, baseCols);
   
-  const startIdx = 14;
+  const startIdx = 15;
   for (let i = 0; i < MAX_ITEMS * 3; i++) {
     const col = String.fromCharCode(65 + startIdx + i);
     colWidths[col] = (i % 3 === 0) ? 30 : 12;
   }
-  
+
   const timeCol = String.fromCharCode(65 + startIdx + MAX_ITEMS * 3);
   const errorCol = String.fromCharCode(65 + startIdx + MAX_ITEMS * 3 + 1);
   colWidths[timeCol] = 20;
@@ -140,6 +141,7 @@ export function exportToCSV(records: ProcessingRecord[]): void {
     '购方税号',
     '价税合计',
     '税额',
+    '总额',
     '校验码',
     '识别置信度',
     ...Array.from({ length: MAX_ITEMS }, (_, i) => [`项目名称${i + 1}`, `金额${i + 1}`, `税额${i + 1}`]).flat(),
@@ -168,6 +170,7 @@ export function exportToCSV(records: ProcessingRecord[]): void {
       ocr?.buyerTaxNumber || '',
       ocr?.totalAmount || '',
       ocr?.taxAmount || '',
+      ocr?.totalSum || '',
       ocr?.checkCode || '',
       ocr?.confidence ? `${(ocr.confidence * 100).toFixed(2)}%` : '',
       ...itemValues,
