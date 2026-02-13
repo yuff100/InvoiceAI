@@ -27,3 +27,6 @@ test/*.jpeg
 # Temp files
 *.tmp
 *.temp
+
+# Editor/IDE directories
+oh-my-opencode/
