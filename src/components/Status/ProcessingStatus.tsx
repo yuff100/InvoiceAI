@@ -1,8 +1,9 @@
 import React from 'react'
-import { Card, Progress, Tag, Button, Space, Divider, Typography, Descriptions } from 'antd'
-import { ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons'
+import { Card, Progress, Tag, Button, Space, Divider, Typography, Descriptions, message } from 'antd'
+import { ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined, DownloadOutlined } from '@ant-design/icons'
 import { ProcessingRecord } from '@/types/invoice'
 import { useOAStore } from '@/stores/oaStore'
+import { exportToExcel } from '@/utils/export'
 import dayjs from 'dayjs'
 
 const { Text } = Typography
@@ -55,15 +56,21 @@ const ProcessingStatus: React.FC<ProcessingStatusProps> = ({ record }) => {
     try {
       const activeConfigs = getActiveConfigs()
       if (activeConfigs.length === 0) {
-        // TODO: 显示配置提示
         console.log('请先配置OA系统')
         return
       }
-
-      // TODO: 实现OA推送逻辑
       console.log('推送至OA:', record.id, activeConfigs)
     } catch (error) {
       console.error('OA推送失败:', error)
+    }
+  }
+
+  const handleDownload = () => {
+    try {
+      exportToExcel([record])
+      message.success('导出成功')
+    } catch (error) {
+      message.error('导出失败: ' + (error as Error).message)
     }
   }
 
@@ -109,14 +116,24 @@ const ProcessingStatus: React.FC<ProcessingStatusProps> = ({ record }) => {
             </Button>
           )}
           {record.status === 'completed' && (
-            <Button 
-              type="primary" 
-              size="small" 
-              onClick={handlePushToOA}
-              className="hover:scale-105 transition-transform"
-            >
-              推送到OA
-            </Button>
+            <>
+              <Button 
+                size="small" 
+                icon={<DownloadOutlined />}
+                onClick={handleDownload}
+                className="hover:scale-105 transition-transform"
+              >
+                下载
+              </Button>
+              <Button 
+                type="primary" 
+                size="small" 
+                onClick={handlePushToOA}
+                className="hover:scale-105 transition-transform"
+              >
+                推送到OA
+              </Button>
+            </>
           )}
         </Space>
       }

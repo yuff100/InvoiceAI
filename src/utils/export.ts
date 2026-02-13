@@ -1,15 +1,18 @@
 import * as XLSX from 'xlsx';
-import type { ProcessingRecord, InvoiceFields } from '../types/invoice';
+import type { ProcessingRecord, InvoiceFields, InvoiceItem } from '../types/invoice';
 
-/**
- * 将处理记录导出为Excel文件
- */
+function formatItems(items?: InvoiceItem[]): string {
+  if (!items || items.length === 0) return '';
+  return items.map((item, idx) => 
+    `${idx + 1}. ${item.name} (金额:${item.amount}${item.taxAmount ? ',税额:' + item.taxAmount : ''})`
+  ).join('; ');
+}
+
 export function exportToExcel(records: ProcessingRecord[]): void {
   if (!records || records.length === 0) {
     throw new Error('没有可导出的数据');
   }
 
-  // 准备数据
   const data = records.map((record, index) => {
     const ocr = record.ocrResult;
     return {
@@ -27,6 +30,7 @@ export function exportToExcel(records: ProcessingRecord[]): void {
       '税额': ocr?.taxAmount || '',
       '校验码': ocr?.checkCode || '',
       '识别置信度': ocr?.confidence ? `${(ocr.confidence * 100).toFixed(2)}%` : '',
+      '项目明细': formatItems(ocr?.items),
       '处理时间': record.uploadTime,
       '错误信息': record.error || '',
     };
@@ -38,24 +42,24 @@ export function exportToExcel(records: ProcessingRecord[]): void {
   // 创建工作表
   const ws = XLSX.utils.json_to_sheet(data);
   
-  // 设置列宽
   const colWidths: Record<string, number> = {
-    'A': 8,   // 序号
-    'B': 25,  // 文件名
-    'C': 12,  // 处理状态
-    'D': 15,  // 发票代码
-    'E': 22,  // 发票号码
-    'F': 12,  // 开票日期
-    'G': 30,  // 销方名称
-    'H': 20,  // 销方税号
-    'I': 30,  // 购方名称
-    'J': 20,  // 购方税号
-    'K': 12,  // 价税合计
-    'L': 12,  // 税额
-    'M': 20,  // 校验码
-    'N': 12,  // 识别置信度
-    'O': 20,  // 处理时间
-    'P': 30,  // 错误信息
+    'A': 8,
+    'B': 25,
+    'C': 12,
+    'D': 15,
+    'E': 22,
+    'F': 12,
+    'G': 30,
+    'H': 20,
+    'I': 30,
+    'J': 20,
+    'K': 12,
+    'L': 12,
+    'M': 20,
+    'N': 12,
+    'O': 50,
+    'P': 20,
+    'Q': 30,
   };
   
   ws['!cols'] = Object.keys(colWidths).map(key => ({ wch: colWidths[key] }));
@@ -115,6 +119,7 @@ export function exportToCSV(records: ProcessingRecord[]): void {
     '税额',
     '校验码',
     '识别置信度',
+    '项目明细',
     '处理时间',
     '错误信息',
   ];
@@ -136,6 +141,7 @@ export function exportToCSV(records: ProcessingRecord[]): void {
       ocr?.taxAmount || '',
       ocr?.checkCode || '',
       ocr?.confidence ? `${(ocr.confidence * 100).toFixed(2)}%` : '',
+      formatItems(ocr?.items),
       record.uploadTime,
       record.error || '',
     ];

@@ -1,3 +1,13 @@
+// 发票项目明细
+export interface InvoiceItem {
+  name: string;
+  quantity?: number;
+  unitPrice?: number;
+  amount: number;
+  taxRate?: number;
+  taxAmount?: number;
+}
+
 // 发票数据类型
 export interface InvoiceFields {
   invoiceCode?: string;      // 发票代码
@@ -11,6 +21,7 @@ export interface InvoiceFields {
   taxAmount?: string;        // 税额
   checkCode?: string;        // 校验码
   confidence?: number;       // 置信度
+  items?: InvoiceItem[];     // 项目明细
 }
 
 // 发票处理状态
