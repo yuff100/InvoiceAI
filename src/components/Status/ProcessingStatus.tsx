@@ -193,6 +193,7 @@ const ProcessingStatus: React.FC<ProcessingStatusProps> = ({ record }) => {
                 buyerTaxNumber: '购方税号',
                 totalAmount: '价税合计',
                 taxAmount: '税额',
+                totalSum: '总额',
                 checkCode: '校验码'
               }
               
