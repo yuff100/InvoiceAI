@@ -281,60 +281,23 @@ function extractInvoiceFields(ocrText) {
     }
   }
   
-  // 销方名称
-  const sellerPatterns = [
-    /销方名称[:：]\s*([^\n]{2,40})/,
-    /销售方名\s*称[:：]\s*([^\n]{2,40})/,
-  ];
-  for (const pattern of sellerPatterns) {
-    const match = cleanedText.match(pattern);
-    if (match) {
-      fields.sellerName = match[1].replace(/\s+/g, '').trim();
-      console.log('✅ Found sellerName:', fields.sellerName);
-      break;
-    }
+  // 提取购方/销方信息（处理OCR空格和多种格式）
+  const partyInfo = extractPartyInfo(cleanedText);
+  if (partyInfo.sellerName) {
+    fields.sellerName = partyInfo.sellerName;
+    console.log('✅ Found sellerName:', fields.sellerName);
   }
-  
-  // 销方税号
-  const sellerTaxPatterns = [
-    /销方税号[:：]\s*([A-Z0-9]{15,20})/i,
-    /销方纳税人识别号[:：]\s*([A-Z0-9]{15,20})/i,
-  ];
-  for (const pattern of sellerTaxPatterns) {
-    const match = cleanedText.match(pattern);
-    if (match) {
-      fields.sellerTaxNumber = match[1].toUpperCase();
-      console.log('✅ Found sellerTaxNumber:', fields.sellerTaxNumber);
-      break;
-    }
+  if (partyInfo.sellerTaxNumber) {
+    fields.sellerTaxNumber = partyInfo.sellerTaxNumber;
+    console.log('✅ Found sellerTaxNumber:', fields.sellerTaxNumber);
   }
-  
-  // 购方名称
-  const buyerPatterns = [
-    /购方名称[:：]\s*([^\n]{2,40})/,
-    /购买方名\s*称[:：]\s*([^\n]{2,40})/,
-  ];
-  for (const pattern of buyerPatterns) {
-    const match = cleanedText.match(pattern);
-    if (match) {
-      fields.buyerName = match[1].replace(/\s+/g, '').trim();
-      console.log('✅ Found buyerName:', fields.buyerName);
-      break;
-    }
+  if (partyInfo.buyerName) {
+    fields.buyerName = partyInfo.buyerName;
+    console.log('✅ Found buyerName:', fields.buyerName);
   }
-  
-  // 购方税号
-  const buyerTaxPatterns = [
-    /购方税号[:：]\s*([A-Z0-9]{15,20})/i,
-    /购方纳税人识别号[:：]\s*([A-Z0-9]{15,20})/i,
-  ];
-  for (const pattern of buyerTaxPatterns) {
-    const match = cleanedText.match(pattern);
-    if (match) {
-      fields.buyerTaxNumber = match[1].toUpperCase();
-      console.log('✅ Found buyerTaxNumber:', fields.buyerTaxNumber);
-      break;
-    }
+  if (partyInfo.buyerTaxNumber) {
+    fields.buyerTaxNumber = partyInfo.buyerTaxNumber;
+    console.log('✅ Found buyerTaxNumber:', fields.buyerTaxNumber);
   }
   
   // 价税合计（小写数字）- 处理OCR空格如 "879. 00"
@@ -565,6 +528,122 @@ function cleanOCRText(text) {
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
   
   return cleaned;
+}
+
+/**
+ * 提取购方和销方信息
+ * 处理标准格式和OCR噪声格式
+ */
+function extractPartyInfo(ocrText) {
+  const result = {
+    sellerName: null,
+    sellerTaxNumber: null,
+    buyerName: null,
+    buyerTaxNumber: null
+  };
+
+  // 方法1: 标准格式匹配
+  // 销方名称
+  const sellerNameMatch = ocrText.match(/销\s*方\s*名\s*称\s*[:：]\s*([^\n]{2,40})/);
+  if (sellerNameMatch) {
+    result.sellerName = sellerNameMatch[1].replace(/\s+/g, '').trim();
+  }
+
+  // 销方税号
+  const sellerTaxMatch = ocrText.match(/销\s*方\s*(?:税\s*号|纳税人识别号)\s*[:：]\s*([A-Z0-9]{15,20})/i);
+  if (sellerTaxMatch) {
+    result.sellerTaxNumber = sellerTaxMatch[1].toUpperCase();
+  }
+
+  // 购方名称
+  const buyerNameMatch = ocrText.match(/购\s*方\s*名\s*称\s*[:：]\s*([^\n]{2,40})/);
+  if (buyerNameMatch) {
+    result.buyerName = buyerNameMatch[1].replace(/\s+/g, '').trim();
+  }
+
+  // 购方税号
+  const buyerTaxMatch = ocrText.match(/购\s*方\s*(?:税\s*号|纳税人识别号)\s*[:：]\s*([A-Z0-9]{15,20})/i);
+  if (buyerTaxMatch) {
+    result.buyerTaxNumber = buyerTaxMatch[1].toUpperCase();
+  }
+
+  // 方法2: 处理OCR噪声格式（如 "名称: A公司 光 名称: B公司 芝"）
+  if (!result.sellerName || !result.buyerName) {
+    // 查找包含多个"名称"的行
+    const multiNameMatch = ocrText.match(/名\s*称\s*[:：]\s*([^\n]*?名\s*称[^\n]*)/);
+    if (multiNameMatch) {
+      const line = multiNameMatch[1];
+      // 按 "名称" 分割
+      const parts = line.split(/名\s*称/).filter(p => p.trim().length > 0);
+
+      if (parts.length >= 2) {
+        // 清理噪声字符
+        const cleanPart = (part) => {
+          return part
+            .replace(/[:：|]/g, '')
+            .replace(/\s+/g, '')
+            .replace(/[（(》]/g, '(')
+            .replace(/[）)]/g, ')')
+            .replace(/[》》]/g, '')
+            .replace(/芝$/, '')
+            .replace(/^光/, '')
+            .replace(/光$/, '')
+            .replace(/\(上海\(/g, '(上海)')
+            .trim();
+        };
+
+        // 第一个通常是购方，第二个是销方
+        if (!result.buyerName) {
+          result.buyerName = cleanPart(parts[0]);
+        }
+        if (!result.sellerName) {
+          result.sellerName = cleanPart(parts[1]);
+        }
+      }
+    }
+  }
+
+  // 方法3: 从"统一社会信用代码/纳税人识别号"行提取税号
+  if (!result.sellerTaxNumber || !result.buyerTaxNumber) {
+    // 查找包含纳税人识别号的行
+    const taxLineMatch = ocrText.match(/统一\s*社会\s*信用\s*代码.*?[:：]\s*([A-Z0-9]{15,20})/gi);
+    if (taxLineMatch && taxLineMatch.length >= 2) {
+      const taxNumbers = taxLineMatch.map(m => {
+        const match = m.match(/[:：]\s*([A-Z0-9]{15,20})/i);
+        return match ? match[1].toUpperCase() : null;
+      }).filter(Boolean);
+
+      if (taxNumbers.length >= 2) {
+        if (!result.buyerTaxNumber) {
+          result.buyerTaxNumber = taxNumbers[0];
+        }
+        if (!result.sellerTaxNumber) {
+          result.sellerTaxNumber = taxNumbers[1];
+        }
+      }
+    }
+  }
+
+  // 方法4: 根据上下文智能判断
+  // 如果名称中包含"餐饮"、"酒店"、"服务"等，通常是销方（销售服务方）
+  const serviceKeywords = ['餐饮', '酒店', '服务', '零售', '贸易', '科技', '咨询', '管理'];
+
+  if (result.buyerName && result.sellerName) {
+    const buyerIsService = serviceKeywords.some(k => result.buyerName.includes(k));
+    const sellerIsService = serviceKeywords.some(k => result.sellerName.includes(k));
+
+    // 如果购方是服务方而销方不是，则交换
+    if (buyerIsService && !sellerIsService) {
+      const tempName = result.buyerName;
+      const tempTax = result.buyerTaxNumber;
+      result.buyerName = result.sellerName;
+      result.buyerTaxNumber = result.sellerTaxNumber;
+      result.sellerName = tempName;
+      result.sellerTaxNumber = tempTax;
+    }
+  }
+
+  return result;
 }
 
 module.exports = router;
