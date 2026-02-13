@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { message } from 'antd'
 import { useUploadStore } from '@/stores/uploadStore'
@@ -6,6 +6,11 @@ import { ocrServiceManager, getUploadSignature, completeUpload } from '@/service
 import { validateFile, generateId, formatFileSize } from '@/utils'
 import { ProcessedImage, ProcessingRecord } from '@/types/invoice'
 import imageCompression from 'browser-image-compression'
+
+interface UploadOptions {
+  onProgress?: (fileName: string, progress: number) => void
+  onComplete?: (fileName: string, success: boolean, error?: string) => void
+}
 
 export const useUpload = () => {
   const {
@@ -18,6 +23,7 @@ export const useUpload = () => {
   } = useUploadStore()
   
   const queryClient = useQueryClient()
+  const [uploadProgress, setUploadProgressState] = useState<Record<string, number>>({})
 
   const processImage = useCallback(async (file: File): Promise<ProcessedImage> => {
     const validation = validateFile(file)
@@ -150,19 +156,123 @@ export const useUpload = () => {
     }
   }, [])
 
-  // 直接用Base64图片做OCR（跳过七牛云上传）
+  // 单个文件上传
+  const uploadSingleFile = useCallback(async (
+    file: File, 
+    taskId: string,
+    callbacks?: UploadOptions
+  ): Promise<ProcessingRecord> => {
+    const processedFile = await processImage(file)
+    
+    callbacks?.onProgress?.(file.name, 30)
+    
+    // 将图片转为Base64
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(processedFile.file)
+    })
+    
+    callbacks?.onProgress?.(file.name, 50)
+    
+    // 直接调用Tesseract OCR
+    const ocrResult = await triggerOCRWithBase64(base64)
+    const ocrData = ocrResult.data
+    
+    callbacks?.onProgress?.(file.name, 80)
+    
+    if (!ocrData?.success && !ocrData?.ocrText) {
+      const failedRecord: ProcessingRecord = { 
+        id: taskId,
+        fileName: processedFile.name,
+        uploadTime: new Date().toISOString(),
+        status: 'failed', 
+        error: 'OCR识别失败'
+      }
+      addToHistory(failedRecord)
+      callbacks?.onComplete?.(file.name, false, 'OCR识别失败')
+      return failedRecord
+    }
+    
+    const completedRecord: ProcessingRecord = { 
+      id: taskId,
+      fileName: processedFile.name,
+      uploadTime: new Date().toISOString(),
+      status: 'completed', 
+      progress: 100,
+      ocrResult: {
+        ...ocrData,
+        ...ocrData?.fields
+      }
+    }
+    
+    addToHistory(completedRecord)
+    callbacks?.onProgress?.(file.name, 100)
+    callbacks?.onComplete?.(file.name, true)
+    
+    return completedRecord
+  }, [processImage, triggerOCRWithBase64, addToHistory])
+
+  // 批量上传
+  const uploadMultiple = useCallback(async (
+    files: File[],
+    callbacks?: UploadOptions
+  ): Promise<void> => {
+    if (files.length === 0) return
+    
+    setIsUploading(true)
+    const totalFiles = files.length
+    let completedCount = 0
+    let successCount = 0
+    
+    try {
+      // 使用 Promise.allSettled 并发处理所有文件
+      const uploadPromises = files.map(async (file, index) => {
+        const taskId = generateId(`task_${index}_`)
+        
+        try {
+          const result = await uploadSingleFile(file, taskId, callbacks)
+          completedCount++
+          if (result.status === 'completed') {
+            successCount++
+          }
+          return result
+        } catch (error) {
+          completedCount++
+          const errorMsg = error instanceof Error ? error.message : '上传失败'
+          callbacks?.onComplete?.(file.name, false, errorMsg)
+          return null
+        }
+      })
+      
+      await Promise.allSettled(uploadPromises)
+      
+      if (successCount === totalFiles) {
+        message.success(`成功上传 ${successCount} 个文件`)
+      } else if (successCount > 0) {
+        message.warning(`${successCount}/${totalFiles} 个文件上传成功`)
+      } else {
+        message.error('所有文件上传失败')
+      }
+    } finally {
+      setIsUploading(false)
+      queryClient.invalidateQueries({ queryKey: ['upload-history'] })
+    }
+  }, [uploadSingleFile, setIsUploading, queryClient])
+
+  // 单个文件上传（保持向后兼容）
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       setIsUploading(true)
       setUploadProgress(0)
       
       try {
-        const processedFile = await processImage(file)
         const taskId = generateId('task_')
         
         const uploadRecord: ProcessingRecord = {
           id: taskId,
-          fileName: processedFile.name,
+          fileName: file.name,
           uploadTime: new Date().toISOString(),
           status: 'processing',
           progress: 50
@@ -170,66 +280,21 @@ export const useUpload = () => {
         
         setCurrentUpload(uploadRecord)
         
-        // 直接使用原始图片，不额外压缩
-        console.log('📥 Using original image for OCR, size:', processedFile.size)
-        
-        // 将图片转为Base64
-        console.log('📥 Converting image to base64...')
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsDataURL(processedFile.file)
+        const result = await uploadSingleFile(file, taskId, {
+          onProgress: (fileName, progress) => {
+            setUploadProgress(progress)
+          }
         })
         
-        console.log('📥 Base64长度:', base64.length)
-        setUploadProgress(70)
+        setCurrentUpload(result)
         
-        console.log('📥 Starting OCR with base64 image...')
-        // 直接调用Tesseract OCR（用base64）
-        const ocrResult = await triggerOCRWithBase64(base64)
-        
-        console.log('📥 OCR Result received:', ocrResult)
-        
-        const ocrData = ocrResult.data
-        
-        if (!ocrData?.success && !ocrData?.ocrText) {
-          const failedRecord: ProcessingRecord = { 
-            id: taskId,
-            fileName: processedFile.name,
-            uploadTime: new Date().toISOString(),
-            status: 'failed', 
-            error: 'OCR识别失败：无法识别图片内容'
-          }
-          setCurrentUpload(failedRecord)
-          addToHistory(failedRecord)
-          message.warning('OCR识别失败')
-          throw new Error('OCR识别失败')
+        if (result.status === 'completed') {
+          message.success('OCR识别成功！')
+        } else {
+          message.error(result.error || '识别失败')
         }
         
-        const completedRecord: ProcessingRecord = { 
-          id: taskId,
-          fileName: processedFile.name,
-          uploadTime: new Date().toISOString(),
-          status: 'completed', 
-          progress: 100,
-          ocrResult: {
-            ...ocrData,
-            ...ocrData?.fields
-          }
-        }
-        
-        console.log('📥 Setting completed record:', completedRecord)
-        setCurrentUpload(completedRecord)
-        addToHistory(completedRecord)
-        
-        setUploadProgress(100)
-        message.success('OCR识别成功！')
-        
-        return {
-          success: true,
-          ocrResult: ocrData
-        }
+        return result
       } catch (error) {
         console.error('上传失败:', error)
         const errorMessage = error instanceof Error ? error.message : '上传失败，请重试'
@@ -247,7 +312,9 @@ export const useUpload = () => {
 
   return {
     upload: uploadMutation.mutateAsync,
+    uploadMultiple,
     isUploading: uploadMutation.isPending,
+    uploadProgress,
     error: uploadMutation.error
   }
 }
