@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+</head>
+<body>
+    <h1>API Test</h1>
+    
+    <h2>Test Upload Signature</h2>
+    <button onclick="testSignature()">Test Upload Signature</button>
+    <div id="signature-result"></div>
+    
+    <h2>Test OCR</h2>
+    <button onclick="testOCR()">Test OCR</button>
+    <div id="ocr-result"></div>
+
+    <script>
+    async function testSignature() {
+        try {
+            const response = await fetch('/api/qiniu/signature', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    fileName: 'test.jpg'
+                })
+            });
+            
+            const result = await response.json();
+            console.log('Signature result:', result);
+            document.getElementById('signature-result').textContent = JSON.stringify(result, null, 2);
+        } catch (error) {
+            console.error('Signature error:', error);
+            document.getElementById('signature-result').textContent = 'ERROR: ' + error.message;
+        }
+    }
+        
+        async function testOCR() {
+            try {
+                const response = await fetch('/api/ocr/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        fileUrl: 'https://example.com/test.jpg',
+                        fileName: 'test.jpg',
+                        taskId: 'test_123'
+                    })
+                });
+                
+                const result = await response.json();
+                console.log('OCR result:', result);
+                document.getElementById('ocr-result').textContent = JSON.stringify(result, null, 2);
+            } catch (error) {
+                console.error('OCR error:', error);
+                document.getElementById('ocr-result').textContent = 'ERROR: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

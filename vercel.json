@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    },
+    {
+      "src": "api/**/*.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "env": {
+    "BAIDU_OCR_API_KEY": "@baidu-ocr-api-key",
+    "BAIDU_OCR_SECRET_KEY": "@baidu-ocr-secret-key",
+    "QINIU_ACCESS_KEY": "@qiniu-access-key",
+    "QINIU_SECRET_KEY": "@qiniu-secret-key",
+    "QINIU_BUCKET": "@qiniu-bucket"
+  },
+  "functions": {
+    "api/ocr/process.ts": {
+      "maxDuration": 30
+    },
+    "api/oa/push.ts": {
+      "maxDuration": 10
+    }
+  }
+}

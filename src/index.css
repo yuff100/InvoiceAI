@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 自定义组件样式 */
+.upload-area {
+  @apply border-2 border-dashed border-gray-300 rounded-xl p-8 text-center transition-all duration-200 bg-gray-50 hover:bg-gray-100;
+}
+
+.upload-area.dragging {
+  @apply border-blue-500 bg-blue-50 scale-[1.02];
+}
+
+.upload-area:hover {
+  @apply border-blue-400 bg-gray-100;
+}
+
+/* 自定义阴影效果 */
+.shadow-custom {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06), 0 0 0 0 rgba(59, 130, 246, 0.05);
+}
+
+/* 渐变背景 */
+.gradient-bg {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* 玻璃效果 */
+.glass-effect {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.upload-area.dragging {
+  @apply border-primary-500 bg-primary-50;
+}
+
+.upload-area:hover {
+  @apply border-blue-400;
+}
+
+.status-indicator {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.status-indicator.idle {
+  @apply bg-gray-100 text-gray-800;
+}
+
+.status-indicator.uploading {
+  @apply bg-blue-100 text-blue-800;
+}
+
+.status-indicator.processing {
+  @apply bg-yellow-100 text-yellow-800;
+}
+
+.status-indicator.completed {
+  @apply bg-green-100 text-green-800;
+}
+
+.status-indicator.failed {
+  @apply bg-red-100 text-red-800;
+}
+
+/* 响应式工具类 */
+.container-mobile {
+  @apply container mx-auto px-4 max-w-md;
+}
+
+.container-desktop {
+  @apply container mx-auto px-4 max-w-6xl;
+}
+
+/* 动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* 自定义滚动条 */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
