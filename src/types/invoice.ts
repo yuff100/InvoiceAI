@@ -31,6 +31,7 @@ export type ProcessingStatus = 'idle' | 'uploading' | 'processing' | 'completed'
 // 处理记录
 export interface ProcessingRecord {
   id: string;
+  batchId?: string;          // 批次ID，用于分组多文件上传
   fileName: string;
   fileUrl?: string;
   uploadTime: string;
@@ -39,6 +40,14 @@ export interface ProcessingRecord {
   oaPushResults?: PushResult[];
   error?: string;
   progress?: number;
+}
+
+// 批次记录
+export interface BatchRecord {
+  batchId: string;
+  uploadTime: string;
+  files: ProcessingRecord[];
+  status: ProcessingStatus;
 }
 
 // 文件处理结果

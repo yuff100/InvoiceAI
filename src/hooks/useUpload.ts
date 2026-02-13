@@ -9,7 +9,7 @@ import imageCompression from 'browser-image-compression'
 
 interface UploadOptions {
   onProgress?: (fileName: string, progress: number) => void
-  onComplete?: (fileName: string, success: boolean, error?: string) => void
+  onComplete?: (fileName: string, success: boolean, record?: ProcessingRecord, error?: string) => void
 }
 
 export const useUpload = () => {
@@ -160,13 +160,13 @@ export const useUpload = () => {
   const uploadSingleFile = useCallback(async (
     file: File, 
     taskId: string,
+    batchId?: string,
     callbacks?: UploadOptions
   ): Promise<ProcessingRecord> => {
     const processedFile = await processImage(file)
     
     callbacks?.onProgress?.(file.name, 30)
     
-    // 将图片转为Base64
     const base64 = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => resolve(reader.result as string)
@@ -176,7 +176,6 @@ export const useUpload = () => {
     
     callbacks?.onProgress?.(file.name, 50)
     
-    // 直接调用Tesseract OCR
     const ocrResult = await triggerOCRWithBase64(base64)
     const ocrData = ocrResult.data
     
@@ -185,18 +184,20 @@ export const useUpload = () => {
     if (!ocrData?.success && !ocrData?.ocrText) {
       const failedRecord: ProcessingRecord = { 
         id: taskId,
+        batchId,
         fileName: processedFile.name,
         uploadTime: new Date().toISOString(),
         status: 'failed', 
         error: 'OCR识别失败'
       }
       addToHistory(failedRecord)
-      callbacks?.onComplete?.(file.name, false, 'OCR识别失败')
+      callbacks?.onComplete?.(file.name, false, failedRecord, 'OCR识别失败')
       return failedRecord
     }
     
     const completedRecord: ProcessingRecord = { 
       id: taskId,
+      batchId,
       fileName: processedFile.name,
       uploadTime: new Date().toISOString(),
       status: 'completed', 
@@ -209,7 +210,7 @@ export const useUpload = () => {
     
     addToHistory(completedRecord)
     callbacks?.onProgress?.(file.name, 100)
-    callbacks?.onComplete?.(file.name, true)
+    callbacks?.onComplete?.(file.name, true, completedRecord)
     
     return completedRecord
   }, [processImage, triggerOCRWithBase64, addToHistory])
@@ -217,6 +218,7 @@ export const useUpload = () => {
   // 批量上传
   const uploadMultiple = useCallback(async (
     files: File[],
+    batchId?: string,
     callbacks?: UploadOptions
   ): Promise<void> => {
     if (files.length === 0) return
@@ -227,12 +229,11 @@ export const useUpload = () => {
     let successCount = 0
     
     try {
-      // 使用 Promise.allSettled 并发处理所有文件
       const uploadPromises = files.map(async (file, index) => {
         const taskId = generateId(`task_${index}_`)
         
         try {
-          const result = await uploadSingleFile(file, taskId, callbacks)
+          const result = await uploadSingleFile(file, taskId, batchId, callbacks)
           completedCount++
           if (result.status === 'completed') {
             successCount++
@@ -241,7 +242,15 @@ export const useUpload = () => {
         } catch (error) {
           completedCount++
           const errorMsg = error instanceof Error ? error.message : '上传失败'
-          callbacks?.onComplete?.(file.name, false, errorMsg)
+          const failedRecord: ProcessingRecord = {
+            id: taskId,
+            batchId,
+            fileName: file.name,
+            uploadTime: new Date().toISOString(),
+            status: 'failed',
+            error: errorMsg
+          }
+          callbacks?.onComplete?.(file.name, false, failedRecord, errorMsg)
           return null
         }
       })

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Card, List, Tag, Button, Typography, Empty, message, Space, Dropdown } from 'antd'
+import { Card, List, Tag, Button, Typography, Empty, message, Space, Dropdown, Collapse } from 'antd'
 import { DeleteOutlined, EyeOutlined, DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { useUploadStore } from '@/stores/uploadStore'
@@ -8,6 +8,13 @@ import dayjs from 'dayjs'
 import type { ProcessingRecord } from '@/types/invoice'
 
 const { Title, Text } = Typography
+const { Panel } = Collapse
+
+interface BatchGroup {
+  batchId: string
+  uploadTime: string
+  records: ProcessingRecord[]
+}
 
 const HistoryPage: React.FC = () => {
   const { history, removeFromHistory } = useUploadStore()
@@ -70,6 +77,33 @@ const HistoryPage: React.FC = () => {
     }
   }
 
+  // 按批次分组
+  const groupByBatch = (records: ProcessingRecord[]): BatchGroup[] => {
+    const groups: Record<string, ProcessingRecord[]> = {}
+    
+    records.forEach(record => {
+      const batchId = record.batchId || `single_${record.id}`
+      if (!groups[batchId]) {
+        groups[batchId] = []
+      }
+      groups[batchId].push(record)
+    })
+    
+    return Object.entries(groups)
+      .map(([batchId, records]) => ({
+        batchId,
+        uploadTime: records[0]?.uploadTime || new Date().toISOString(),
+        records: records.sort((a, b) => 
+          new Date(b.uploadTime).getTime() - new Date(a.uploadTime).getTime()
+        )
+      }))
+      .sort((a, b) => 
+        new Date(b.uploadTime).getTime() - new Date(a.uploadTime).getTime()
+      )
+  }
+
+  const batchGroups = groupByBatch(history)
+
   return (
     <div className="py-8">
       <div className="max-w-6xl mx-auto">
@@ -112,115 +146,160 @@ const HistoryPage: React.FC = () => {
             className="my-16"
           />
         ) : (
-          <List
-            grid={{
-              gutter: 16,
-              xs: 1,
-              sm: 2,
-              md: 2,
-              lg: 3,
-              xl: 3,
-              xxl: 4,
-            }}
-            dataSource={history}
-            renderItem={(record) => (
-              <List.Item>
-                <Card
-                  hoverable
-                  className="h-full"
-                  actions={[
-                    <Button
-                      key="view"
-                      type="text"
-                      icon={<EyeOutlined />}
-                      onClick={() => handleView(record)}
-                    >
-                      查看
-                    </Button>,
-                    record.status === 'completed' && (
-                      <Dropdown
-                        key="export"
-                        menu={{
-                          items: [
-                            {
-                              key: 'excel',
-                              icon: <FileExcelOutlined />,
-                              label: '导出Excel',
-                              onClick: () => {
-                                try {
-                                  exportToExcel([record])
-                                  message.success('导出成功')
-                                } catch (error) {
-                                  message.error('导出失败: ' + (error as Error).message)
-                                }
-                              }
-                            },
-                            {
-                              key: 'csv',
-                              icon: <FileTextOutlined />,
-                              label: '导出CSV',
-                              onClick: () => {
-                                try {
-                                  exportToCSV([record])
-                                  message.success('导出成功')
-                                } catch (error) {
-                                  message.error('导出失败: ' + (error as Error).message)
-                                }
-                              }
-                            }
-                          ]
-                        }}
-                      >
-                        <Button type="text" icon={<DownloadOutlined />}>
-                          导出
-                        </Button>
-                      </Dropdown>
-                    ),
-                    <Button
-                      key="delete"
-                      type="text"
-                      danger
-                      icon={<DeleteOutlined />}
-                      onClick={() => handleDelete(record.id)}
-                    >
-                      删除
-                    </Button>
-                  ].filter(Boolean)}
+          <Collapse defaultActiveKey={['0']}>
+            {batchGroups.map((batch, index) => {
+              const completedCount = batch.records.filter(r => r.status === 'completed').length
+              const totalCount = batch.records.length
+              const isBatch = batch.batchId.startsWith('batch_')
+              
+              return (
+                <Panel
+                  key={index.toString()}
+                  header={
+                    <div className="flex justify-between items-center w-full pr-8">
+                      <div>
+                        <span className="font-medium">
+                          {isBatch ? '批量上传' : '单文件上传'} 
+                        </span>
+                        <span className="text-gray-500 ml-2">
+                          {dayjs(batch.uploadTime).format('YYYY-MM-DD HH:mm:ss')}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <Tag color="blue">
+                          完成 {completedCount}/{totalCount}
+                        </Tag>
+                        {completedCount > 0 && (
+                          <Button
+                            size="small"
+                            icon={<DownloadOutlined />}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const completedRecords = batch.records.filter(r => r.status === 'completed')
+                              exportToExcel(completedRecords)
+                              message.success(`已导出 ${completedRecords.length} 条记录`)
+                            }}
+                          >
+                            导出Excel
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  }
                 >
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-start">
-                      <Text strong className="text-sm truncate flex-1">
-                        {record.fileName}
-                      </Text>
-                      <Tag color={getStatusColor(record.status)}>
-                        {getStatusText(record.status)}
-                      </Tag>
-                    </div>
-                    
-                    <div className="text-xs text-gray-500 space-y-1">
-                      <div>上传时间: {dayjs(record.uploadTime).format('YYYY-MM-DD HH:mm')}</div>
-                      {record.ocrResult && (
-                        <div>
-                          置信度: {Math.round((record.ocrResult.confidence || 0) * 100)}%
-                        </div>
-                      )}
-                      {record.oaPushResults && (
-                        <div>
-                          OA推送: {record.oaPushResults.filter(r => r.success).length}/{record.oaPushResults.length}
-                        </div>
-                      )}
-                    </div>
+                  <List
+                    grid={{
+                      gutter: 16,
+                      xs: 1,
+                      sm: 2,
+                      md: 2,
+                      lg: 3,
+                      xl: 3,
+                      xxl: 4,
+                    }}
+                    dataSource={batch.records}
+                    renderItem={(record) => (
+                      <List.Item>
+                        <Card
+                          hoverable
+                          className="h-full"
+                          actions={[
+                            <Button
+                              key="view"
+                              type="text"
+                              icon={<EyeOutlined />}
+                              onClick={() => handleView(record)}
+                            >
+                              查看
+                            </Button>,
+                            record.status === 'completed' && (
+                              <Dropdown
+                                key="export"
+                                menu={{
+                                  items: [
+                                    {
+                                      key: 'excel',
+                                      icon: <FileExcelOutlined />,
+                                      label: '导出Excel',
+                                      onClick: () => {
+                                        try {
+                                          exportToExcel([record])
+                                          message.success('导出成功')
+                                        } catch (error) {
+                                          message.error('导出失败: ' + (error as Error).message)
+                                        }
+                                      }
+                                    },
+                                    {
+                                      key: 'csv',
+                                      icon: <FileTextOutlined />,
+                                      label: '导出CSV',
+                                      onClick: () => {
+                                        try {
+                                          exportToCSV([record])
+                                          message.success('导出成功')
+                                        } catch (error) {
+                                          message.error('导出失败: ' + (error as Error).message)
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }}
+                              >
+                                <Button type="text" icon={<DownloadOutlined />}>
+                                  导出
+                                </Button>
+                              </Dropdown>
+                            ),
+                            <Button
+                              key="delete"
+                              type="text"
+                              danger
+                              icon={<DeleteOutlined />}
+                              onClick={() => handleDelete(record.id)}
+                            >
+                              删除
+                            </Button>
+                          ].filter(Boolean)}
+                        >
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-start">
+                              <Text strong className="text-sm truncate flex-1">
+                                {record.fileName}
+                              </Text>
+                              <Tag color={getStatusColor(record.status)}>
+                                {getStatusText(record.status)}
+                              </Tag>
+                            </div>
+                            
+                            <div className="text-xs text-gray-500 space-y-1">
+                              <div>上传时间: {dayjs(record.uploadTime).format('YYYY-MM-DD HH:mm')}</div>
+                              {record.ocrResult && (
+                                <div>
+                                  置信度: {Math.round((record.ocrResult.confidence || 0) * 100)}%
+                                </div>
+                              )}
+                              {record.oaPushResults && (
+                                <div>
+                                  OA推送: {record.oaPushResults.filter(r => r.success).length}/{record.oaPushResults.length}
+                                </div>
+                              )}
+                            </div>
 
-                    {record.error && (
-                      <Text type="danger" className="text-xs">
-                        {record.error}
-                      </Text>
+                            {record.error && (
+                              <Text type="danger" className="text-xs">
+                                {record.error}
+                              </Text>
+                            )}
+                          </div>
+                        </Card>
+                      </List.Item>
                     )}
-                  </div>
-                </Card>
-              </List.Item>
-            )}
-          />
+                  />
+                </Panel>
+              )
+            })}
+          </Collapse>
         )}
       </div>
     </div>

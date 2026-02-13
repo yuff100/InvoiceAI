@@ -1,9 +1,11 @@
 import React, { useState, useRef } from 'react'
-import { Upload, message, Button, List, Progress, Tag } from 'antd'
-import { InboxOutlined, CloudUploadOutlined, FileImageOutlined, CloseCircleOutlined } from '@ant-design/icons'
+import { Upload, message, Button, List, Progress, Tag, Space } from 'antd'
+import { InboxOutlined, CloudUploadOutlined, FileImageOutlined, CloseCircleOutlined, DownloadOutlined } from '@ant-design/icons'
 import { useUploadStore } from '@/stores/uploadStore'
 import { useUpload } from '@/hooks/useUpload'
+import { exportToExcel } from '@/utils/export'
 import type { UploadFile } from 'antd/es/upload/interface'
+import type { ProcessingRecord } from '@/types/invoice'
 
 const { Dragger } = Upload
 
@@ -13,6 +15,7 @@ interface FileItem {
   status: 'pending' | 'uploading' | 'completed' | 'error'
   progress: number
   error?: string
+  record?: ProcessingRecord
 }
 
 const UploadArea: React.FC = () => {
@@ -25,17 +28,16 @@ const UploadArea: React.FC = () => {
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return
 
+    const batchId = `batch_${Date.now()}`
     const validFiles: FileItem[] = []
     
     Array.from(files).forEach((file, index) => {
-      // 验证文件类型
       const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf']
       if (!validTypes.includes(file.type)) {
         message.error(`${file.name} 格式不支持`)
         return
       }
       
-      // 验证文件大小
       if (file.size > maxFileSize) {
         message.error(`${file.name} 超过 ${Math.round(maxFileSize / 1024 / 1024)}MB 限制`)
         return
@@ -52,9 +54,8 @@ const UploadArea: React.FC = () => {
     if (validFiles.length > 0) {
       setFileList(prev => [...prev, ...validFiles])
       
-      // 开始批量上传
       try {
-        await uploadMultiple(validFiles.map(f => f.file), {
+        await uploadMultiple(validFiles.map(f => f.file), batchId, {
           onProgress: (fileName, progress) => {
             setFileList(prev => 
               prev.map(item => 
@@ -64,11 +65,11 @@ const UploadArea: React.FC = () => {
               )
             )
           },
-          onComplete: (fileName, success, error) => {
+          onComplete: (fileName, success, record, error) => {
             setFileList(prev => 
               prev.map(item => 
                 item.file.name === fileName 
-                  ? { ...item, status: success ? 'completed' : 'error', error, progress: success ? 100 : item.progress }
+                  ? { ...item, status: success ? 'completed' : 'error', error, progress: success ? 100 : item.progress, record }
                   : item
               )
             )
@@ -169,14 +170,32 @@ const UploadArea: React.FC = () => {
             <h4 className="text-lg font-semibold text-gray-800">
               上传队列 ({fileList.filter(f => f.status === 'completed').length}/{fileList.length})
             </h4>
-            {fileList.some(f => f.status === 'completed' || f.status === 'error') && (
-              <Button 
-                type="link" 
-                onClick={() => setFileList([])}
-              >
-                清空列表
-              </Button>
-            )}
+            <Space>
+              {fileList.some(f => f.status === 'completed') && (
+                <Button
+                  type="primary"
+                  icon={<DownloadOutlined />}
+                  onClick={() => {
+                    const completedRecords = fileList
+                      .filter(f => f.status === 'completed' && f.record)
+                      .map(f => f.record!)
+                    if (completedRecords.length > 0) {
+                      exportToExcel(completedRecords)
+                    }
+                  }}
+                >
+                  导出Excel
+                </Button>
+              )}
+              {fileList.some(f => f.status === 'completed' || f.status === 'error') && (
+                <Button 
+                  type="link" 
+                  onClick={() => setFileList([])}
+                >
+                  清空列表
+                </Button>
+              )}
+            </Space>
           </div>
           <List
             size="small"
@@ -186,6 +205,18 @@ const UploadArea: React.FC = () => {
               <List.Item
                 actions={[
                   getStatusTag(item.status),
+                  item.status === 'completed' && item.record && (
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<DownloadOutlined />}
+                      onClick={() => {
+                        if (item.record) {
+                          exportToExcel([item.record])
+                        }
+                      }}
+                    />
+                  ),
                   item.status !== 'uploading' && (
                     <Button 
                       type="text" 
@@ -209,6 +240,10 @@ const UploadArea: React.FC = () => {
                       />
                     ) : item.error ? (
                       <span className="text-red-500 text-sm">{item.error}</span>
+                    ) : item.record?.ocrResult ? (
+                      <span className="text-green-600 text-sm">
+                        发票号: {item.record.ocrResult.invoiceNumber || 'N/A'}
+                      </span>
                     ) : null
                   }
                 />
