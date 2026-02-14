@@ -1,8 +1,5 @@
-// 导入OCR服务管理器 - 使用ES模块导入
-import { ocrServiceManager } from '@/lib/ocr-service-manager';
 import type { UploadSignature } from '@/types/invoice';
 
-// 获取签名
 export async function getUploadSignature(fileName: string): Promise<UploadSignature> {
   const response = await fetch('/api/qiniu/signature', {
     method: 'POST',
@@ -17,14 +14,20 @@ export async function getUploadSignature(fileName: string): Promise<UploadSignat
   return response.json();
 }
 
-// 完成上传并触发OCR - 使用Tesseract
-export async function completeUpload(params: { fileUrl: string; fileName: string; taskId: string }) {
-  const response = await fetch('/api/tesseract/ocr', {
+export async function completeUpload(params: {
+  fileUrl?: string;
+  fileName: string;
+  taskId: string;
+  provider?: 'zhipu' | 'tesseract' | 'auto';
+}) {
+  const response = await fetch('/api/ocr/process', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      imageUrl: params.fileUrl,
-      extractFields: true
+      fileUrl: params.fileUrl,
+      fileName: params.fileName,
+      taskId: params.taskId,
+      provider: params.provider
     })
   });
 
@@ -32,18 +35,9 @@ export async function completeUpload(params: { fileUrl: string; fileName: string
     throw new Error(`OCR处理失败: ${response.status}`);
   }
 
-  return response.json();
+  const result = await response.json();
+  console.log('🔍 API Response:', JSON.stringify(result, null, 2))
+  const extracted = result.data?.ocrResult || result;
+  console.log('🔍 Extracted from API:', JSON.stringify(extracted, null, 2))
+  return extracted;
 }
-
-// 检查OCR服务状态
-export function checkOCRService() {
-  const provider = ocrServiceManager.getCurrentProvider();
-  
-  return {
-    enabled: !!provider.auth(),
-    provider: provider.name
-  };
-}
-
-// 导出OCR服务管理器
-export { ocrServiceManager };

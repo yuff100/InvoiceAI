@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { message } from 'antd'
 import { useUploadStore } from '@/stores/uploadStore'
-import { ocrServiceManager, getUploadSignature, completeUpload } from '@/services/api'
+import { getUploadSignature, completeUpload } from '@/services/api'
 import { validateFile, generateId, formatFileSize } from '@/utils'
 import { ProcessedImage, ProcessingRecord } from '@/types/invoice'
 import imageCompression from 'browser-image-compression'
@@ -114,34 +114,8 @@ export const useUpload = () => {
     }
   }, [])
 
-  // 使用Base64图片做OCR
-  const triggerOCRWithBase64 = useCallback(async (base64Image: string) => {
-    console.log('🔥 Triggering OCR with base64 image...')
-    try {
-      const response = await fetch('/api/tesseract/ocr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: base64Image,
-          extractFields: true
-        })
-      })
-      
-      if (!response.ok) {
-        throw new Error(`OCR failed: ${response.status}`)
-      }
-      
-      const result = await response.json()
-      console.log('✅ OCR Result:', result)
-      return result
-    } catch (error) {
-      console.error('❌ OCR Error:', error)
-      throw error
-    }
-  }, [])
-
   const triggerOCR = useCallback(async (params: {
-    fileUrl: string
+    fileUrl?: string
     fileName: string
     taskId: string
   }) => {
@@ -156,64 +130,71 @@ export const useUpload = () => {
     }
   }, [])
 
-  // 单个文件上传
+  // 单个文件上传（上传七牛云 + OCR）
   const uploadSingleFile = useCallback(async (
-    file: File, 
+    file: File,
     taskId: string,
     batchId?: string,
     callbacks?: UploadOptions
   ): Promise<ProcessingRecord> => {
     const processedFile = await processImage(file)
-    
-    callbacks?.onProgress?.(file.name, 30)
-    
-    const base64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(processedFile.file)
+
+    callbacks?.onProgress?.(file.name, 20)
+
+    const fileUrl = await uploadToQiniu(processedFile, (progress) => {
+      callbacks?.onProgress?.(file.name, 20 + Math.round(progress * 0.3))
     })
-    
+
     callbacks?.onProgress?.(file.name, 50)
-    
-    const ocrResult = await triggerOCRWithBase64(base64)
-    const ocrData = ocrResult.data
-    
+
+    const ocrResult = await triggerOCR({
+      fileUrl,
+      fileName: processedFile.name,
+      taskId
+    })
+
     callbacks?.onProgress?.(file.name, 80)
-    
-    if (!ocrData?.success && !ocrData?.ocrText) {
-      const failedRecord: ProcessingRecord = { 
+
+    if (!ocrResult?.success) {
+      const failedRecord: ProcessingRecord = {
         id: taskId,
         batchId,
         fileName: processedFile.name,
+        fileUrl,
         uploadTime: new Date().toISOString(),
-        status: 'failed', 
-        error: 'OCR识别失败'
+        status: 'failed',
+        error: ocrResult?.error || 'OCR识别失败'
       }
       addToHistory(failedRecord)
-      callbacks?.onComplete?.(file.name, false, failedRecord, 'OCR识别失败')
+      callbacks?.onComplete?.(file.name, false, failedRecord, ocrResult?.error)
       return failedRecord
     }
-    
-    const completedRecord: ProcessingRecord = { 
+
+    // 从嵌套结构中正确提取OCR数据
+    // API返回: { success: true, data: { ocrResult: { success: true, data: {...}, confidence: 0.xx } } }
+    console.log('🔍 OCR Result structure:', JSON.stringify(ocrResult, null, 2))
+    const ocrData = ocrResult.data?.ocrResult?.data || ocrResult.data
+    console.log('🔍 Extracted OCR Data:', JSON.stringify(ocrData, null, 2))
+
+    const completedRecord: ProcessingRecord = {
       id: taskId,
       batchId,
       fileName: processedFile.name,
+      fileUrl,
       uploadTime: new Date().toISOString(),
-      status: 'completed', 
+      status: 'completed',
       progress: 100,
-      ocrResult: {
-        ...ocrData,
-        ...ocrData?.fields
-      }
+      ocrResult: ocrData
     }
     
+    console.log('🔍 Completed Record:', JSON.stringify(completedRecord, null, 2))
+
     addToHistory(completedRecord)
     callbacks?.onProgress?.(file.name, 100)
     callbacks?.onComplete?.(file.name, true, completedRecord)
-    
+
     return completedRecord
-  }, [processImage, triggerOCRWithBase64, addToHistory])
+  }, [processImage, uploadToQiniu, triggerOCR, addToHistory])
 
   // 批量上传
   const uploadMultiple = useCallback(async (
@@ -289,7 +270,7 @@ export const useUpload = () => {
         
         setCurrentUpload(uploadRecord)
         
-        const result = await uploadSingleFile(file, taskId, {
+        const result = await uploadSingleFile(file, taskId, undefined, {
           onProgress: (fileName, progress) => {
             setUploadProgress(progress)
           }

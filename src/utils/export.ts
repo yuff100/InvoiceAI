@@ -36,8 +36,11 @@ export function exportToExcel(records: ProcessingRecord[]): void {
     throw new Error('没有可导出的数据');
   }
 
+  console.log('📊 Exporting records:', JSON.stringify(records, null, 2));
+
   const data = records.map((record, index) => {
     const ocr = record.ocrResult;
+    console.log(`📊 Record ${index + 1} OCR Data:`, JSON.stringify(ocr, null, 2));
     const itemColumns = generateItemColumns(ocr?.items);
     
     return {

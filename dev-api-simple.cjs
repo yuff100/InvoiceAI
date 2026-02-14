@@ -2,14 +2,38 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
-// Clear module cache on reload
 delete require.cache[require.resolve('./src/pages/api/tesseract.cjs')];
 
 const app = express();
 app.use(cors());
-// 增加JSON解析限制到200MB
 app.use(express.json({ limit: '200mb' }));
 app.use(express.urlencoded({ limit: '200mb', extended: true }));
+
+// 发票识别专用prompt
+const INVOICE_PROMPT = `请按下列JSON格式输出图中发票信息，不要输出其他内容:
+{
+    "invoiceCode": "发票代码",
+    "invoiceNumber": "发票号码",
+    "invoiceDate": "开票日期(格式: YYYY-MM-DD)",
+    "sellerName": "销售方名称",
+    "sellerTaxNumber": "销售方纳税人识别号",
+    "buyerName": "购买方名称",
+    "buyerTaxNumber": "购买方纳税人识别号",
+    "totalSum": "金额合计(不含税)",
+    "taxAmount": "税额合计",
+    "totalAmount": "价税合计",
+    "items": [
+        {
+            "name": "项目名称",
+            "quantity": "数量",
+            "unitPrice": "单价",
+            "amount": "金额",
+            "taxRate": "税率",
+            "taxAmount": "税额"
+        }
+    ],
+    "checkCode": "校验码"
+}`;
 
 // 上传签名
 app.post('/api/qiniu/signature', (req, res) => {
@@ -25,8 +49,8 @@ app.post('/api/qiniu/signature', (req, res) => {
     const accessKey = process.env.QINIU_ACCESS_KEY;
     const secretKey = process.env.QINIU_SECRET_KEY;
     const bucket = process.env.QINIU_BUCKET || 'invoice-ai';
-    // 使用默认的七牛云CDN域名格式
-    const domain = process.env.QINIU_DOMAIN || `http://${bucket}.qiniu.com`;
+    // 使用配置的CDN域名
+    const domain = process.env.QINIU_DOMAIN || `https://${bucket}.deepnomind.com`;
 
     if (!accessKey || !secretKey) {
       return res.status(500).json({ error: 'Qiniu credentials not configured' });
@@ -60,111 +84,36 @@ app.post('/api/qiniu/signature', (req, res) => {
   }
 });
 
-// OCR处理
+// 智谱OCR处理
 app.post('/api/ocr/process', async (req, res) => {
   try {
     console.log('📥 OCR request body:', req.body);
-    const { fileUrl, fileName, taskId } = req.body;
+    const { fileUrl, fileName, taskId, provider } = req.body;
 
     if (!fileUrl || !fileName || !taskId) {
       console.log('❌ Missing required parameters:', { fileUrl: !!fileUrl, fileName: !!fileName, taskId: !!taskId });
       return res.status(400).json({ error: 'fileUrl, fileName, and taskId are required' });
     }
 
-    const accessKey = process.env.QINIU_ACCESS_KEY;
-    const secretKey = process.env.QINIU_SECRET_KEY;
+    const zhipuApiKey = process.env.ZHIPU_API_KEY;
+    const ocrProvider = provider || process.env.OCR_PROVIDER || 'auto';
 
-    if (!accessKey || !secretKey) {
-      return res.status(500).json({ error: 'Qiniu OCR credentials not configured' });
+    // 根据provider选择OCR服务
+    if (ocrProvider === 'tesseract' || (ocrProvider === 'auto' && !zhipuApiKey)) {
+      console.log('🔄 Using Tesseract OCR');
+      return await callTesseractOCR(fileUrl, res);
     }
 
-    // 调用七牛云OCR API
-    const qiniu = require('qiniu');
-    const crypto = require('crypto');
-
-    async function callQiniuOCR(imageUrl, accessKey, secretKey) {
-      const apiUrl = 'https://ap-gate-z0.qiniuapi.com/ocr/vat/invoice';
-      
-      const requestData = {
-        data: {
-          uri: imageUrl
-        }
-      };
-
-      console.log('🔥 Real OCR Request:', {
-        url: apiUrl,
-        data: requestData
-      });
-
-      const signingStr = `${apiUrl}\nPOST\n${JSON.stringify(requestData)}\nHost: ap-gate-z0.qiniuapi.com\nContent-Type:application/json`;
-      const encodedStr = Buffer.from(signingStr, 'utf8').toString('base64');
-      const signature = crypto.createHmac('sha1', secretKey).update(encodedStr).digest('base64');
-      const urlSafeSignature = signature.replace(/\+/g, '-').replace(/\//g, '_');
-      const accessToken = `Qiniu ${accessKey}:${urlSafeSignature}`;
-
-      console.log('🔐 Real OCR Access Token:', accessToken.substring(0, 30) + '...');
-
-      try {
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': accessToken
-          },
-          body: JSON.stringify(requestData)
-        });
-
-        console.log('🔍 Real OCR Status:', response.status);
-        
-        const responseText = await response.text();
-        console.log('🔍 Real OCR Response:', responseText.substring(0, 200));
-        
-        let result;
-        try {
-          result = JSON.parse(responseText);
-        } catch (parseError) {
-          console.error('🚨 Real OCR Parse Error:', parseError);
-          throw new Error(`Invalid JSON response: ${responseText}`);
-        }
-
-        if (result.status_code === 0) {
-          const normalizedData = {
-            invoiceCode: result.data?.InvoiceCode,
-            invoiceNumber: result.data?.InvoiceNum,
-            invoiceDate: result.data?.InvoiceDate,
-            sellerName: result.data?.SellerName,
-            sellerTaxNumber: result.data?.SellerRegisterNum,
-            buyerName: result.data?.BuyerName,
-            buyerTaxNumber: result.data?.BuyerRegisterNum,
-            totalAmount: result.data?.TotalAmount,
-            taxAmount: result.data?.TotalTax,
-            checkCode: result.data?.CheckCode
-          };
-
-          return {
-            success: true,
-            data: {
-              ocrResult: {
-                success: true,
-                data: normalizedData,
-                confidence: 0.95
-              }
-            }
-          };
-        } else {
-          throw new Error(result.message || 'OCR识别失败');
-        }
-      } catch (error) {
-        console.error('🚨 Real OCR Request Error:', error);
-        throw error;
-      }
+    // 使用智谱OCR
+    if (!zhipuApiKey) {
+      return res.status(500).json({ error: 'ZHIPU_API_KEY not configured' });
     }
 
-    // 执行OCR调用
-    const ocrResult = await callQiniuOCR(fileUrl, accessKey, secretKey);
+    console.log('🚀 Using Zhipu OCR');
+    const ocrResult = await callZhipuOCR(fileUrl, zhipuApiKey);
     console.log('✅ OCR Result:', ocrResult);
     res.json(ocrResult);
-    
+
   } catch (error) {
     console.error('OCR processing error:', error);
     res.status(500).json({
@@ -174,12 +123,244 @@ app.post('/api/ocr/process', async (req, res) => {
   }
 });
 
-// 简单测试路由
+// 智谱OCR调用（使用 layout_parsing API，下载图片转 base64）
+async function callZhipuOCR(imageUrl, apiKey) {
+  const apiUrl = 'https://open.bigmodel.cn/api/paas/v4/layout_parsing';
+
+  console.log('🔥 Zhipu OCR Request for:', imageUrl);
+  console.log('📥 Downloading and converting to base64...');
+  
+  try {
+    // 下载图片
+    console.log('📥 Downloading image from CDN...');
+    const imageResponse = await fetch(imageUrl);
+
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to download image from CDN: ${imageResponse.status}`);
+    }
+
+    const buffer = await imageResponse.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+
+    // 检测图片格式
+    const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
+    let mimeType = 'image/jpeg';
+    
+    if (contentType.includes('png')) {
+      mimeType = 'image/png';
+    } else if (contentType.includes('jpg') || contentType.includes('jpeg')) {
+      mimeType = 'image/jpeg';
+    } else if (imageUrl.toLowerCase().endsWith('.png')) {
+      mimeType = 'image/png';
+    }
+
+    console.log('✅ Image downloaded');
+    console.log('📊 Image size:', buffer.byteLength, 'bytes');
+    console.log('📷 Image MIME type:', mimeType);
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': apiKey
+      },
+      body: JSON.stringify({
+        model: 'glm-ocr',
+        file: `data:${mimeType};base64,${base64}`
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Zhipu API error:', response.status, errorText);
+      throw new Error(`智谱API错误: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('📥 Zhipu response received');
+    console.log('📊 Response data:', JSON.stringify(result, null, 2));
+
+    // glm-ocr 返回的是文档解析结果，包含 md_results 字段
+    if (result.md_results) {
+      console.log('📊 Usage:', result.usage);
+      return parseZhipuOCRResponse(result);
+    }
+
+    throw new Error('智谱API返回格式异常');
+  } catch (error) {
+    console.error('❌ Zhipu OCR failed:', error);
+    throw error;
+  }
+}
+
+// 调用Tesseract OCR（fileUrl）
+async function callTesseractOCR(imageUrl, res) {
+  const tesseractUrl = 'http://localhost:3001/api/tesseract/ocr';
+
+  try {
+    const response = await fetch(tesseractUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageUrl: imageUrl, extractFields: true })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Tesseract API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    res.json(result);
+  } catch (error) {
+    console.error('❌ Tesseract OCR failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Tesseract OCR调用失败: ' + error.message
+    });
+  }
+}
+
+// 解析智谱 OCR 返回内容（md_results 格式）
+function parseZhipuOCRResponse(result) {
+  try {
+    const mdText = result.md_results || '';
+    console.log('📋 Parsing markdown:', mdText.substring(0, 500));
+
+    // 提取合计行的两个金额：合计¥394.06¥3.94
+    const amountMatch = mdText.match(/合计[¥￥\$]*([\.\d,]+)[¥￥\$]*([\.\d,]+)/);
+    const totalSum = amountMatch ? amountMatch[1] : '';
+    const taxAmount = amountMatch ? amountMatch[2] : '';
+    console.log('💰 Amount extraction:', { amountMatch: amountMatch ? amountMatch[0] : 'null', totalSum, taxAmount });
+
+    // 提取价税合计：从"小写）¥398.00"中提取
+    const totalAmountMatch = mdText.match(/小写[）\)][¥￥\$]+([\d.,]+)/) || mdText.match(/价税合计[\s\S]*?[¥￥\$]+([\d.,]+)/);
+    const totalAmount = totalAmountMatch ? totalAmountMatch[1] : '';
+    console.log('💰 Total amount extraction:', { totalAmountMatch: totalAmountMatch ? totalAmountMatch[0] : 'null', totalAmount });
+
+    // 从 markdown 中提取发票信息
+    const invoiceData = {
+      invoiceCode: '',
+      invoiceNumber: extractField(mdText, /发票号码[：:](\d+)/),
+      invoiceDate: normalizeDate(extractField(mdText, /开票日期[：:]([\d年月日]+)/)),
+      sellerName: extractField(mdText, /销售方信息[\s\S]*?名称[：:]([^\n统]+)/),
+      sellerTaxNumber: extractField(mdText, /销售方[\s\S]*?统一社会信用代码\/纳税人识别号[：:]([A-Z0-9]+)/),
+      buyerName: extractField(mdText, /购买方信息[\s\S]*?名称[：:]([^\n统]+)/),
+      buyerTaxNumber: extractField(mdText, /购买方[\s\S]*?统一社会信用代码\/纳税人识别号[：:]([A-Z0-9]+)/),
+      totalSum: cleanAmount(totalSum),
+      taxAmount: cleanAmount(taxAmount),
+      totalAmount: cleanAmount(totalAmount),
+      checkCode: '',
+      items: []
+    };
+
+    console.log('✅ Extracted invoice data:', invoiceData);
+
+    return {
+      success: true,
+      data: {
+        ocrResult: {
+          success: true,
+          data: invoiceData,
+          confidence: calculateConfidence(invoiceData),
+          rawText: mdText
+        }
+      }
+    };
+  } catch (error) {
+    console.error('❌ Parse error:', error);
+    return {
+      success: false,
+      error: '解析发票数据失败',
+      rawText: result.md_results || ''
+    };
+  }
+}
+
+// 提取字段
+function extractField(text, regex) {
+  const match = text.match(regex);
+  return match ? match[1].trim() : '';
+}
+
+// 解析智谱返回内容
+function parseZhipuResponse(content) {
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return {
+        success: false,
+        error: '无法从返回内容中提取JSON',
+        rawText: content
+      };
+    }
+
+    const data = JSON.parse(jsonMatch[0]);
+    
+    return {
+      success: true,
+      data: {
+        ocrResult: {
+          success: true,
+          data: {
+            invoiceCode: data.invoiceCode || '',
+            invoiceNumber: data.invoiceNumber || '',
+            invoiceDate: normalizeDate(data.invoiceDate || ''),
+            sellerName: data.sellerName || '',
+            sellerTaxNumber: data.sellerTaxNumber || '',
+            buyerName: data.buyerName || '',
+            buyerTaxNumber: data.buyerTaxNumber || '',
+            totalSum: cleanAmount(data.totalSum || ''),
+            taxAmount: cleanAmount(data.taxAmount || ''),
+            totalAmount: cleanAmount(data.totalAmount || ''),
+            checkCode: data.checkCode || '',
+            items: data.items || []
+          },
+          confidence: calculateConfidence(data)
+        }
+      }
+    };
+  } catch (error) {
+    console.error('❌ Parse error:', error);
+    return {
+      success: false,
+      error: '解析发票数据失败',
+      rawText: content
+    };
+  }
+}
+
+function normalizeDate(dateStr) {
+  if (!dateStr) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  
+  const cnMatch = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (cnMatch) return `${cnMatch[1]}-${cnMatch[2].padStart(2, '0')}-${cnMatch[3].padStart(2, '0')}`;
+  
+  const numMatch = dateStr.match(/(\d{4})(\d{2})(\d{2})/);
+  if (numMatch) return `${numMatch[1]}-${numMatch[2]}-${numMatch[3]}`;
+  
+  return dateStr;
+}
+
+function cleanAmount(amount) {
+  if (!amount) return '';
+  return amount.toString().replace(/[¥￥,，\s]/g, '').trim();
+}
+
+function calculateConfidence(data) {
+  const keyFields = ['invoiceCode', 'invoiceNumber', 'invoiceDate', 'sellerName', 'buyerName', 'totalAmount'];
+  const validFields = keyFields.filter(field => {
+    const value = data[field];
+    return value && String(value).trim().length > 0;
+  });
+  return Math.round((validFields.length / keyFields.length) * 100) / 100;
+}
+
+// 测试路由
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Test route working', timestamp: new Date().toISOString() });
 });
 
-// 导入Tesseract路由
+// Tesseract路由
 const tesseractRouter = require('./src/pages/api/tesseract.cjs');
 console.log('Tesseract router loaded:', typeof tesseractRouter);
 app.use('/api/tesseract', tesseractRouter);
