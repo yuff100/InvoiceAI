@@ -4,9 +4,6 @@
     "api/ocr/process.ts": {
       "maxDuration": 30
     },
-    "api/oa/push.ts": {
-      "maxDuration": 10
-    },
     "api/tesseract/ocr.ts": {
       "maxDuration": 30
     }
