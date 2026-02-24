@@ -208,19 +208,89 @@ export const useUpload = () => {
     const totalFiles = files.length
     let completedCount = 0
     let successCount = 0
-    let lastRecord: ProcessingRecord | null = null
+    
+    // 创建批处理记录
+    const batchRecord: ProcessingRecord = {
+      id: batchId || generateId('batch_'),
+      batchId: batchId || generateId('batch_'),
+      fileName: `批量上传 (${files.length}个文件)`,
+      uploadTime: new Date().toISOString(),
+      status: 'processing',
+      progress: 0,
+      files: files.map((file, index) => ({
+        id: generateId(`file_${index}_`),
+        name: file.name,
+        status: 'pending' as const,
+        progress: 0
+      }))
+    }
     
     try {
+      // 先设置批处理记录为currentUpload
+      console.log('Setting currentUpload with batchRecord:', batchRecord)
+      console.log('BatchRecord files:', batchRecord.files)
+      setCurrentUpload(batchRecord)
+      
       const uploadPromises = files.map(async (file, index) => {
         const taskId = generateId(`task_${index}_`)
-        
+        const fileId = batchRecord.files[index].id
         try {
-          const result = await uploadSingleFile(file, taskId, batchId, callbacks)
+          const result = await uploadSingleFile(file, taskId, batchId, {
+            ...callbacks,
+            onProgress: (fileName, progress) => {
+              // 更新单个文件进度
+              setCurrentUpload(prev => {
+                if (!prev?.files) return prev
+                const updatedFiles = prev.files.map(f => 
+                  f.id === fileId 
+                    ? { ...f, status: 'uploading', progress: Math.round(progress) }
+                    : f
+                )
+                const completedFiles = updatedFiles.filter(f => f.status === 'completed').length
+                const totalProgress = Math.round((completedFiles / totalFiles) * 100)
+                
+                return {
+                  ...prev,
+                  status: completedFiles === totalFiles ? 'completed' : 'processing',
+                  progress: totalProgress,
+                  files: updatedFiles
+                }
+              })
+              
+              
+              callbacks?.onProgress?.(fileName, progress)
+            },
+            onComplete: (fileName, success, record, error) => {
+              
+              // 更新批处理状态
+              setCurrentUpload(prev => {
+                if (!prev?.files) return prev
+                const updatedFiles = prev.files.map(f => {
+                  return f.id === fileId 
+                    ? { ...f, status: success ? 'completed' : 'failed' }
+                    : f
+                })
+                const completedFiles = updatedFiles.filter(f => f.status === 'completed').length
+                const failedFiles = updatedFiles.filter(f => f.status === 'failed').length
+                const totalProgress = Math.round(((completedFiles + failedFiles) / totalFiles) * 100)
+                const status = failedFiles > 0 ? 'failed' : completedFiles === totalFiles ? 'completed' : 'processing'
+                
+                return {
+                  ...prev,
+                  status,
+                  progress: totalProgress,
+                  files: updatedFiles
+                }
+              })
+              
+              callbacks?.onComplete?.(fileName, success, record, error)
+            }
+          })
+          
           completedCount++
           if (result.status === 'completed') {
             successCount++
           }
-          lastRecord = result
           return result
         } catch (error) {
           completedCount++
@@ -239,11 +309,6 @@ export const useUpload = () => {
       })
       
       await Promise.allSettled(uploadPromises)
-      
-      // 更新currentUpload状态为最后一个文件的处理记录
-      if (lastRecord) {
-        setCurrentUpload(lastRecord)
-      }
       
       if (successCount === totalFiles) {
         message.success(`成功上传 ${successCount} 个文件`)

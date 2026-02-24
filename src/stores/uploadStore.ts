@@ -17,7 +17,7 @@ interface UploadStore {
   maxFileSize: number;
   
   // Actions
-  setCurrentUpload: (record: ProcessingRecord | null) => void;
+  setCurrentUpload: (record: ProcessingRecord | null | ((prev: ProcessingRecord | null) => ProcessingRecord | null)) => void;
   setIsUploading: (uploading: boolean) => void;
   setUploadProgress: (progress: number) => void;
   
@@ -44,7 +44,7 @@ export const useUploadStore = create<UploadStore>()(
       maxFileSize: 10 * 1024 * 1024, // 10MB
       
       // Actions
-      setCurrentUpload: (record) => set({ currentUpload: record }),
+      setCurrentUpload: (record) => set(state => ({ currentUpload: typeof record === 'function' ? record(state.currentUpload) : record })),
       setIsUploading: (uploading) => set({ isUploading: uploading }),
       setUploadProgress: (progress) => set({ uploadProgress: progress }),
       

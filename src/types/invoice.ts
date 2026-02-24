@@ -40,6 +40,12 @@ export interface ProcessingRecord {
   oaPushResults?: PushResult[];
   error?: string;
   progress?: number;
+  files?: {
+    id: string;
+    name: string;
+    status: 'pending' | 'uploading' | 'completed' | 'failed';
+    progress?: number;
+  }[];
 }
 
 // 批次记录
