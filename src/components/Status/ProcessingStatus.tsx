@@ -13,6 +13,10 @@ interface ProcessingStatusProps {
 }
 
 const ProcessingStatus: React.FC<ProcessingStatusProps> = ({ record }) => {
+  console.log('ProcessingStatus received record:', record)
+  console.log('Record files:', record.files)
+  console.log('Record files length:', record.files?.length)
+  console.log('Record files details:', record.files?.map(f => ({ name: f.name, status: f.status, progress: f.progress })))
   const { getActiveConfigs } = useOAStore()
 
   const getStatusColor = (status: string) => {
@@ -165,6 +169,57 @@ const ProcessingStatus: React.FC<ProcessingStatusProps> = ({ record }) => {
           </Descriptions.Item>
         )}
       </Descriptions>
+      {/* 文件处理状态（批量上传时显示） */}
+      {record.files && record.files.length > 0 && (
+        <>
+          <Divider>文件处理状态</Divider>
+          <div className="space-y-3 mb-4">
+            {record.files.map((file, index) => {
+              const fileStatusColors: Record<string, string> = {
+                pending: 'default',
+                uploading: 'processing',
+                completed: 'success',
+                failed: 'error'
+              }
+              
+              const fileStatusTexts: Record<string, string> = {
+                pending: '等待中',
+                uploading: '上传中',
+                completed: '已完成',
+                failed: '失败'
+              }
+              
+              return (
+                <div key={file.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 flex items-center justify-center bg-blue-100 text-blue-600 rounded-full">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <div className="font-medium text-gray-900">{file.name}</div>
+                      <div className="text-sm text-gray-500">
+                        {fileStatusTexts[file.status] || file.status}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    {file.status === 'uploading' && file.progress !== undefined && (
+                      <Progress 
+                        percent={file.progress} 
+                        size="small" 
+                        style={{ width: '80px' }}
+                      />
+                    )}
+                    <Tag color={fileStatusColors[file.status] || 'default'}>
+                      {fileStatusTexts[file.status] || file.status}
+                    </Tag>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
 
       {/* OCR结果 */}
       {record.ocrResult && (
