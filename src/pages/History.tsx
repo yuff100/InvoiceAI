@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Card, List, Tag, Button, Typography, Empty, message, Space, Dropdown, Collapse } from 'antd'
 import { DeleteOutlined, EyeOutlined, DownloadOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
@@ -6,6 +6,7 @@ import { useUploadStore } from '@/stores/uploadStore'
 import { exportToExcel, exportToCSV } from '@/utils/export'
 import dayjs from 'dayjs'
 import type { ProcessingRecord } from '@/types/invoice'
+import RecordDetailModal from '@/components/Status/RecordDetailModal'
 
 const { Title, Text } = Typography
 const { Panel } = Collapse
@@ -18,6 +19,8 @@ interface BatchGroup {
 
 const HistoryPage: React.FC = () => {
   const { history, removeFromHistory } = useUploadStore()
+  const [selectedRecord, setSelectedRecord] = useState<ProcessingRecord | null>(null)
+  const [modalVisible, setModalVisible] = useState(false)
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -45,8 +48,14 @@ const HistoryPage: React.FC = () => {
     removeFromHistory(id)
   }
 
-  const handleView = (record: any) => {
-    console.log('查看详情:', record)
+  const handleView = (record: ProcessingRecord) => {
+    setSelectedRecord(record)
+    setModalVisible(true)
+  }
+
+  const handleCloseModal = () => {
+    setModalVisible(false)
+    setSelectedRecord(null)
   }
 
   const handleExportExcel = () => {
@@ -302,6 +311,15 @@ const HistoryPage: React.FC = () => {
           </Collapse>
         )}
       </div>
+
+      {/* 记录详情模态框 */}
+      {selectedRecord && (
+        <RecordDetailModal
+          record={selectedRecord}
+          visible={modalVisible}
+          onClose={handleCloseModal}
+        />
+      )}
     </div>
   )
 }
