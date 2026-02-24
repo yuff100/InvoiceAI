@@ -1,4 +1,15 @@
 {
+  "functions": {
+    "api/qiniu/signature.ts": {
+      "maxDuration": 30
+    },
+    "api/ocr/process.ts": {
+      "maxDuration": 60
+    },
+    "api/tesseract/ocr.ts": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
