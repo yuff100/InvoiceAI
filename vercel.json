@@ -4,8 +4,13 @@
       "maxDuration": 30
     },
     "api/ocr/process.ts": {
-      "maxDuration": 60,
-      "includeFiles": "lib/**"
+      "maxDuration": 120,
+      "includeFiles": "lib/**",
+      "env": {
+        "ZHIPU_API_KEY": "@env:ZHIPU_API_KEY",
+        "OCR_PROVIDER": "@env:OCR_PROVIDER",
+        "TESSERACT_API_URL": "@env:TESSERACT_API_URL"
+      }
     },
     "api/tesseract/ocr.ts": {
       "maxDuration": 60
