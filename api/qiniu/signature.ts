@@ -1,3 +1,4 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import * as qiniu from 'qiniu';
 
 interface RequestBody {
@@ -12,20 +13,16 @@ interface UploadSignature {
   expires: number;
 }
 
-export default async function handler(req: Request, res: Response) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+    return res.status(405).send('Method not allowed');
   }
 
   try {
-    const body: RequestBody = await req.json();
-    const { fileName } = body;
+    const { fileName } = req.body as RequestBody;
 
     if (!fileName) {
-      return new Response(
-        JSON.stringify({ error: 'fileName is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return res.status(400).json({ error: 'fileName is required' });
     }
 
     const accessKey = process.env.QINIU_ACCESS_KEY;
@@ -37,10 +34,7 @@ export default async function handler(req: Request, res: Response) {
     console.log('Qiniu config:', { accessKey: accessKey ? 'set' : 'missing', bucket, domain, region });
 
     if (!accessKey || !secretKey) {
-      return new Response(
-        JSON.stringify({ error: 'Qiniu credentials not configured' }),
-        { status: 500, headers: { 'Content-Type': 'application/json' } }
-      );
+      return res.status(500).json({ error: 'Qiniu credentials not configured' });
     }
 
     const mac = new qiniu.auth.digest.Mac(accessKey, secretKey);
@@ -63,16 +57,10 @@ export default async function handler(req: Request, res: Response) {
       expires: Date.now() + 3600 * 1000
     };
 
-    return new Response(
-      JSON.stringify(signature),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    );
+    return res.status(200).json(signature);
 
   } catch (error) {
     console.error('Generate signature error:', error);
-    return new Response(
-      JSON.stringify({ error: 'Failed to generate upload signature' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return res.status(500).json({ error: 'Failed to generate upload signature' });
   }
 }
