@@ -30,8 +30,11 @@ export default async function handler(req: Request, res: Response) {
 
     const accessKey = process.env.QINIU_ACCESS_KEY;
     const secretKey = process.env.QINIU_SECRET_KEY;
-    const bucket = process.env.QINIU_BUCKET || 'invoice-ai';
+    const bucket = process.env.QINIU_BUCKET || 'invoice-ai-store';
     const domain = process.env.QINIU_DOMAIN || 'https://s3.qiniu.com';
+    const region = process.env.QINIU_REGION || 'ap-southeast';
+
+    console.log('Qiniu config:', { accessKey: accessKey ? 'set' : 'missing', bucket, domain, region });
 
     if (!accessKey || !secretKey) {
       return new Response(
