@@ -4,8 +4,7 @@
       "maxDuration": 30
     },
     "api/ocr/process.ts": {
-      "maxDuration": 120,
-      "includeFiles": "lib/**/*.ts"
+      "maxDuration": 120
     },
     "api/tesseract/ocr.ts": {
       "maxDuration": 60
