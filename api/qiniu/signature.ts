@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import * as qiniu from 'qiniu';
+import { auth, rs } from 'qiniu';
 
 interface RequestBody {
   fileName: string;
@@ -37,10 +37,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'Qiniu credentials not configured' });
     }
 
-    const mac = new qiniu.auth.digest.Mac(accessKey, secretKey);
+    const mac = new auth.digest.Mac(accessKey, secretKey);
     const key = `invoices/${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${fileName}`;
     
-    const putPolicy = new qiniu.rs.PutPolicy({
+    const putPolicy = new rs.PutPolicy({
       scope: bucket,
       expires: 3600,
       returnBody: `{"key":"$(key)","hash":"$(etag)","bucket":"$(bucket)","fsize":$(fSize),"mimeType":"$(mimeType)"}`
