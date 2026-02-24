@@ -208,6 +208,7 @@ export const useUpload = () => {
     const totalFiles = files.length
     let completedCount = 0
     let successCount = 0
+    let lastRecord: ProcessingRecord | null = null
     
     try {
       const uploadPromises = files.map(async (file, index) => {
@@ -219,6 +220,7 @@ export const useUpload = () => {
           if (result.status === 'completed') {
             successCount++
           }
+          lastRecord = result
           return result
         } catch (error) {
           completedCount++
@@ -238,6 +240,11 @@ export const useUpload = () => {
       
       await Promise.allSettled(uploadPromises)
       
+      // 更新currentUpload状态为最后一个文件的处理记录
+      if (lastRecord) {
+        setCurrentUpload(lastRecord)
+      }
+      
       if (successCount === totalFiles) {
         message.success(`成功上传 ${successCount} 个文件`)
       } else if (successCount > 0) {
@@ -249,7 +256,7 @@ export const useUpload = () => {
       setIsUploading(false)
       queryClient.invalidateQueries({ queryKey: ['upload-history'] })
     }
-  }, [uploadSingleFile, setIsUploading, queryClient])
+  }, [uploadSingleFile, setIsUploading, setCurrentUpload, queryClient])
 
   // 单个文件上传（保持向后兼容）
   const uploadMutation = useMutation({

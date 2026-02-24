@@ -109,19 +109,25 @@ const UploadArea: React.FC = () => {
   return (
     <div className="bg-white rounded-xl shadow-custom p-8 border border-gray-100 glass-effect">
       <div className={`relative ${isUploading ? 'pointer-events-none opacity-50' : ''}`}>
-        <Dragger
-          name="file"
-          multiple={true}
-          beforeUpload={beforeUpload}
-          accept=".jpg,.jpeg,.png,.pdf"
-          showUploadList={false}
+        <div 
           className={`upload-area ${dragging ? 'dragging' : ''} transition-all duration-300`}
           style={{
             padding: '40px 20px',
             minHeight: '250px',
-            borderRadius: '12px'
+            borderRadius: '12px',
+            border: '2px dashed #d9d9d9',
+            backgroundColor: dragging ? '#f5f5f5' : '#fafafa'
           }}
-          onDrop={handleDrop}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            handleFiles(e.dataTransfer.files);
+          }}
         >
           <div className="text-center">
             <div className="mb-4">
@@ -139,7 +145,7 @@ const UploadArea: React.FC = () => {
               单个文件不超过 {Math.round(maxFileSize / 1024 / 1024)}MB
             </div>
           </div>
-        </Dragger>
+        </div>
         
         <div className="mt-6 text-center space-x-4">
           <input
