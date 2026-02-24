@@ -1,18 +1,16 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
+  "functions": {
+    "api/ocr/process.ts": {
+      "maxDuration": 30
     },
-    {
-      "src": "api/**/*.ts",
-      "use": "@vercel/node"
+    "api/oa/push.ts": {
+      "maxDuration": 10
+    },
+    "api/tesseract/ocr.ts": {
+      "maxDuration": 30
     }
-  ],
+  },
   "routes": [
     {
       "src": "/api/(.*)",
@@ -30,13 +28,5 @@
     "QINIU_SECRET_KEY": "@qiniu-secret-key",
     "QINIU_BUCKET": "@qiniu-bucket",
     "ZHIPU_API_KEY": "@zhipu-api-key"
-  },
-  "functions": {
-    "api/ocr/process.ts": {
-      "maxDuration": 30
-    },
-    "api/oa/push.ts": {
-      "maxDuration": 10
-    }
   }
 }
