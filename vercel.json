@@ -20,15 +20,5 @@
       "src": "/(.*)",
       "dest": "/index.html"
     }
-  ],
-  "env": {
-    "QINIU_ACCESS_KEY": "@env:QINIU_ACCESS_KEY",
-    "QINIU_SECRET_KEY": "@env:QINIU_SECRET_KEY",
-    "QINIU_BUCKET": "@env:QINIU_BUCKET",
-    "QINIU_REGION": "@env:QINIU_REGION",
-    "QINIU_DOMAIN": "@env:QINIU_DOMAIN",
-    "ZHIPU_API_KEY": "@env:ZHIPU_API_KEY",
-    "OCR_PROVIDER": "@env:OCR_PROVIDER",
-    "TESSERACT_API_URL": "@env:TESSERACT_API_URL"
-  }
+  ]
 }
