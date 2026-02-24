@@ -9,7 +9,7 @@ interface RequestBody {
 
 interface OCRResult {
     success: boolean;
-    data?: any;
+    data?: InvoiceFields;
     error?: string;
     confidence?: number;
     rawText?: string;
@@ -130,11 +130,12 @@ async function zhipuOCR(imageUrl: string): Promise<OCRResult> {
         console.log('📥 ZhipuOCR response received');
 
         if (result.md_results) {
+            // 解析 md_results 为 InvoiceFields
+            const invoiceData = parseMarkdownToInvoiceFields(result.md_results);
+            
             return {
                 success: true,
-                data: {
-                    rawText: result.md_results
-                },
+                data: invoiceData,
                 rawText: result.md_results
             };
         }
@@ -151,4 +152,84 @@ async function zhipuOCR(imageUrl: string): Promise<OCRResult> {
             error: error instanceof Error ? error.message : '智谱OCR处理失败'
         };
     }
+}
+
+// 解析 markdown 为发票字段
+function parseMarkdownToInvoiceFields(mdText: string): InvoiceFields {
+    const data: InvoiceFields = {
+        invoiceCode: '',
+        invoiceNumber: '',
+        invoiceDate: '',
+        sellerName: '',
+        sellerTaxNumber: '',
+        buyerName: '',
+        buyerTaxNumber: '',
+        totalAmount: '',
+        taxAmount: '',
+        totalSum: '',
+        checkCode: '',
+        confidence: 0,
+        items: []
+    };
+
+    try {
+        // 提取合计行的两个金额：合计¥394.06¥3.94
+        const amountMatch = mdText.match(/合计[¥￥\$]*([\d.,]+)[¥￥\$]*([\d.,]+)/);
+        if (amountMatch) {
+            data.totalSum = amountMatch[1];
+            data.taxAmount = amountMatch[2];
+            data.totalAmount = (parseFloat(amountMatch[1]) + parseFloat(amountMatch[2])).toString();
+        }
+
+        // 提取价税合计：从"小写）¥398.00"中提取
+        const totalAmountMatch = mdText.match(/小写[）\)][¥￥\$]+([\d.,]+)/) || mdText.match(/价税合计[\s\S]*?[¥￥\$]+([\d.,]+)/);
+        if (totalAmountMatch) {
+            data.totalAmount = totalAmountMatch[1];
+        }
+
+        // 从 markdown 中提取发票信息
+        data.invoiceCode = extractField(mdText, /发票号码[：:]([\d]+)/);
+        data.invoiceNumber = extractField(mdText, /发票号码[：:]([\d]+)/);
+        data.invoiceDate = normalizeDate(extractField(mdText, /开票日期[：:]([\d年月日]+)/));
+        data.sellerName = extractField(mdText, /销售方信息[\s\S]*?名称[：:]([^\n统]+)/);
+        data.sellerTaxNumber = extractField(mdText, /销售方[\s\S]*?统一社会信用代码\/纳税人识别号[：:]([A-Z0-9]+)/);
+        data.buyerName = extractField(mdText, /购买方信息[\s\S]*?名称[：:]([^\n统]+)/);
+        data.buyerTaxNumber = extractField(mdText, /购买方[\s\S]*?统一社会信用代码\/纳税人识别号[：:]([A-Z0-9]+)/);
+        data.checkCode = '';
+
+        // 计算置信度
+        const keyFields = ['invoiceCode', 'invoiceNumber', 'invoiceDate', 'sellerName', 'buyerName', 'totalAmount'];
+        const validFields = keyFields.filter(field => {
+            const value = data[field];
+            return value && String(value).trim().length > 0;
+        });
+        data.confidence = Math.round((validFields.length / keyFields.length) * 100) / 100;
+
+        console.log('✅ Parsed invoice data:', data);
+        
+    } catch (error) {
+        console.error('❌ Parse error:', error);
+    }
+
+    return data;
+}
+
+// 提取字段
+function extractField(text: string, regex: RegExp): string {
+    const match = text.match(regex);
+    return match ? match[1].trim() : '';
+}
+
+// 解析日期
+function normalizeDate(dateStr: string): string {
+    if (!dateStr) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    
+    const cnMatch = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+    if (cnMatch) return `${cnMatch[1]}-${cnMatch[2].padStart(2, '0')}-${cnMatch[3].padStart(2, '0')}`;
+    
+    const numMatch = dateStr.match(/(\d{4})(\d{2})(\d{2})/);
+    if (numMatch) return `${numMatch[1]}-${numMatch[2]}-${numMatch[3]}`;
+    
+    return dateStr;
 }
