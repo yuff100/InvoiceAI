@@ -1,3 +1,4 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { triggerOCR } from '../../lib/ocr';
 
 interface RequestBody {
@@ -22,20 +23,16 @@ interface ApiResponse<T = any> {
     message?: string;
 }
 
-export default async function handler(req: Request, res: Response) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST') {
-        return new Response('Method not allowed', { status: 405 });
+        return res.status(405).send('Method not allowed');
     }
 
     try {
-        const body: RequestBody = await req.json();
-        const { fileUrl, fileName, taskId, provider } = body;
+        const { fileUrl, fileName, taskId, provider } = req.body as RequestBody;
 
         if (!fileUrl || !fileName || !taskId) {
-            return new Response(
-                JSON.stringify({ error: 'fileUrl, fileName, and taskId are required' }),
-                { status: 400, headers: { 'Content-Type': 'application/json' } }
-            );
+            return res.status(400).json({ error: 'fileUrl, fileName, and taskId are required' });
         }
 
         const ocrResult = await triggerOCR({
@@ -52,10 +49,7 @@ export default async function handler(req: Request, res: Response) {
             }
         };
 
-        return new Response(
-            JSON.stringify(response),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
+        return res.status(200).json(response);
 
     } catch (error) {
         console.error('OCR processing error:', error);
@@ -65,9 +59,6 @@ export default async function handler(req: Request, res: Response) {
             error: error instanceof Error ? error.message : 'OCR processing failed'
         };
 
-        return new Response(
-            JSON.stringify(response),
-            { status: 500, headers: { 'Content-Type': 'application/json' } }
-        );
+        return res.status(500).json(response);
     }
 }

@@ -1,3 +1,5 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+
 export interface RequestBody {
   imageUrl: string;
   extractFields?: boolean;
@@ -10,20 +12,16 @@ export interface OCRResult {
   text?: string;
 }
 
-export default async function handler(req: Request, res: Response) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
-    return new Response('Method not allowed', { status: 405 });
+    return res.status(405).send('Method not allowed');
   }
 
   try {
-    const body: RequestBody = await req.json();
-    const { imageUrl, extractFields = true } = body;
+    const { imageUrl, extractFields = true } = req.body as RequestBody;
 
     if (!imageUrl) {
-      return new Response(
-        JSON.stringify({ error: 'imageUrl is required' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
+      return res.status(400).json({ error: 'imageUrl is required' });
     }
 
     // 这里应该调用实际的Tesseract OCR服务
@@ -37,19 +35,13 @@ export default async function handler(req: Request, res: Response) {
       }
     };
 
-    return new Response(
-      JSON.stringify(ocrResult),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    );
+    return res.status(200).json(ocrResult);
   } catch (error) {
     console.error('Tesseract OCR error:', error);
 
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: error instanceof Error ? error.message : 'Tesseract OCR处理失败'
-      }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Tesseract OCR处理失败'
+    });
   }
 }
