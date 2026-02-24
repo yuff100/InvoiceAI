@@ -22,8 +22,6 @@
     }
   ],
   "env": {
-    "BAIDU_OCR_API_KEY": "@baidu-ocr-api-key",
-    "BAIDU_OCR_SECRET_KEY": "@baidu-ocr-secret-key",
     "QINIU_ACCESS_KEY": "@qiniu-access-key",
     "QINIU_SECRET_KEY": "@qiniu-secret-key",
     "QINIU_BUCKET": "@qiniu-bucket",
